@@ -1,6 +1,6 @@
 [package]
 name = "bilibili-account-manager"
-version = "0.1.0"
+version = "0.1.1"
 description = "Bilibili Account Manager"
 authors = ["you"]
 edition = "2021"
