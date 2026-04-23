@@ -83,6 +83,7 @@
       <!-- 测试 -->
       <div style="margin-top:24px">
         <button class="btn btn-ghost btn-block" @click="testReply">测试回复</button>
+        <button class="btn btn-primary btn-block" style="margin-top:12px" @click="manualReply">立即回复视频评论</button>
       </div>
 
       <!-- 历史记录 -->
@@ -172,6 +173,16 @@ const testReply = async () => {
     alert(result)
   } catch (e) {
     console.error('测试失败:', e)
+  }
+}
+
+const manualReply = async () => {
+  try {
+    const result = await invoke('manual_reply_video_comments')
+    alert(result)
+  } catch (e) {
+    alert('执行失败: ' + e)
+    console.error('手动回复失败:', e)
   }
 }
 

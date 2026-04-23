@@ -42,8 +42,16 @@ async fn test_auto_reply() -> Result<String, String> {
     auto_reply::test_reply().await
 }
 
+#[tauri::command]
+async fn manual_reply_video_comments() -> Result<String, String> {
+    auto_reply::manual_reply_comments().await
+}
+
 pub fn run() {
-    env_logger::init();
+    // 配置日志输出到控制台
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format_timestamp_millis()
+        .init();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -55,7 +63,8 @@ pub fn run() {
             delete_account,
             get_auto_reply_settings,
             save_auto_reply_settings,
-            test_auto_reply
+            test_auto_reply,
+            manual_reply_video_comments
         ])
         .setup(|app| {
             // 初始化存储目录

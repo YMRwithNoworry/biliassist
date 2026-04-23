@@ -190,6 +190,11 @@ async fn get_wbi_keys(cookie: &str) -> Result<(String, String), String> {
 
     let json = resp_to_json(resp).await?;
 
+    if json["code"] != 0 {
+        log::error!("获取WBI keys失败: code={}, msg={}", json["code"], json["message"]);
+        return Err(format!("获取WBI keys失败: {}", json["message"]));
+    }
+
     let img_url = json["data"]["wbi_img"]["img_url"]
         .as_str()
         .unwrap_or("");
@@ -200,6 +205,10 @@ async fn get_wbi_keys(cookie: &str) -> Result<(String, String), String> {
     // URL 格式: https://i0.hdslb.com/bfs/wbi/{key}.png
     let img_key = extract_wbi_key(img_url);
     let sub_key = extract_wbi_key(sub_url);
+
+    log::info!("获取WBI keys成功: img_key={}, sub_key={}", 
+        if img_key.len() > 8 { &img_key[..8] } else { &img_key },
+        if sub_key.len() > 8 { &sub_key[..8] } else { &sub_key });
 
     Ok((img_key, sub_key))
 }
@@ -218,13 +227,37 @@ fn sign_wbi_params(
     // 按 key 排序
     map.sort_by(|a, b| a.0.cmp(&b.0));
 
-    // 拼接查询字符串，保留所有字符（B站WBI签名需要完整参数）
+    // URL 编码函数（空格变成 %20）
+    fn encode_value(s: &str) -> String {
+        let mut result = String::new();
+        for c in s.chars() {
+            match c {
+                '!' | '\'' | '(' | ')' | '*' => {
+                    // 这些字符不编码，直接保留
+                    result.push(c);
+                }
+                ' ' => result.push_str("%20"),
+                c if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '~' => {
+                    result.push(c);
+                }
+                _ => {
+                    // 其他字符进行 URL 编码
+                    for byte in c.to_string().as_bytes() {
+                        result.push_str(&format!("%{:02X}", byte));
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    // 拼接查询字符串
     let query: String = map.iter()
-        .map(|(k, v)| format!("{}={}", k, v))
+        .map(|(k, v)| format!("{}={}", k, encode_value(v)))
         .collect::<Vec<_>>()
         .join("&");
 
-    // 计算 MD5 (使用简单哈希代替，B站用 MD5)
+    // 计算 MD5
     let hash = md5_hex(&format!("{}{}", query, mixin_key));
 
     map.push(("w_rid".to_string(), hash));
@@ -326,31 +359,27 @@ async fn run_all(msg: &str, once: bool, sources: &[MsgSource]) -> Result<(), Str
 // ============================================================
 
 async fn get_my_videos(account: &crate::bilibili::UserInfo) -> Result<Vec<u64>, String> {
-    // 先获取 WBI keys
-    let (img_key, sub_key) = get_wbi_keys(&account.cookie).await?;
-
+    // 使用不需要 WBI 签名的 API
     let mut videos = Vec::new();
     let mut page = 1u32;
 
     while page <= 5 {
         let pn = page.to_string();
         let ps = "30".to_string();
-        let base_params: Vec<(String, String)> = vec![
-            ("mid".into(), account.uid.clone()),
-            ("pn".into(), pn),
-            ("ps".into(), ps),
-            ("order".into(), "pubdate".into()),
-            ("order_avoided".into(), "true".into()),
-        ];
 
-        let signed = sign_wbi_params(&base_params, &img_key, &sub_key);
-
+        // 使用 x/space/arc/search API（不需要 WBI 签名）
+        let order = "pubdate".to_string();
         let resp = get_http_client()
-            .get("https://api.bilibili.com/x/space/wbi/arc/search")
+            .get("https://api.bilibili.com/x/space/arc/search")
             .header("Cookie", &account.cookie)
             .header("Referer", format!("https://space.bilibili.com/{}/video", account.uid))
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .query(&signed)
+            .query(&[
+                ("mid", &account.uid),
+                ("pn", &pn),
+                ("ps", &ps),
+                ("order", &order),
+            ])
             .send()
             .await
             .map_err(|e| format!("请求视频列表失败: {}", e))?;
@@ -838,4 +867,18 @@ async fn add_history(user: &str, msg: &str, source: MsgSource) {
 pub async fn test_reply() -> Result<String, String> {
     let s = get_settings_lock().read().await;
     Ok(format!("测试回复内容:\n{}", format_msg(&s.message, "测试用户")))
+}
+
+/// 手动触发一次视频评论回复（用于测试和诊断）
+pub async fn manual_reply_comments() -> Result<String, String> {
+    let account = crate::storage::get_active_account().await.ok_or("没有激活的账号")?;
+    let (reply_msg, once) = {
+        let s = get_settings_lock().read().await;
+        (s.message.clone(), s.reply_only_once)
+    };
+
+    match reply_comments(&account, &reply_msg, once).await {
+        Ok(_) => Ok("视频评论回复任务已执行，请查看日志".to_string()),
+        Err(e) => Err(format!("执行失败: {}", e)),
+    }
 }
