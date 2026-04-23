@@ -114,6 +114,10 @@ jobs:
             git add package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json
             git commit -m "chore(release): bump version to ${NEW_VERSION} [skip ci]" || true
             git push origin HEAD || true
+
+            # 创建并推送 tag
+            git tag "v${NEW_VERSION}" || true
+            git push origin "v${NEW_VERSION}" || true
           fi
 
           # 设置输出
@@ -144,7 +148,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.version.outputs.tag_name }}
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: 设置 Node.js
         uses: actions/setup-node@v4
