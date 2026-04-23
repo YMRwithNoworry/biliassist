@@ -23,6 +23,11 @@ const router = createRouter({
       path: '/auto-reply',
       name: 'auto-reply',
       component: () => import('../views/AutoReplyView.vue')
+    },
+    {
+      path: '/sponsor',
+      name: 'sponsor',
+      component: () => import('../views/SponsorView.vue')
     }
   ]
 })
