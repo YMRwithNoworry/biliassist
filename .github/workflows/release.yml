@@ -155,7 +155,7 @@ jobs:
       - name: 设置 Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24.x'
           cache: 'npm'
 
       - name: 安装 Rust (macOS)
@@ -225,19 +225,26 @@ jobs:
           # 获取上一个 tag
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
 
-          if [ -n "$PREVIOUS_TAG" ]; then
-            echo "### 变更日志 (${PREVIOUS_TAG} -> ${{ needs.version.outputs.tag_name }})" > CHANGELOG_TMP.md
-            echo "" >> CHANGELOG_TMP.md
-            git log --pretty=format:"- %s (%h)" ${PREVIOUS_TAG}..HEAD >> CHANGELOG_TMP.md
-          else
-            echo "### 初始发布" > CHANGELOG_TMP.md
-            echo "" >> CHANGELOG_TMP.md
-            git log --pretty=format:"- %s (%h)" >> CHANGELOG_TMP.md
-          fi
+          # 生成变更日志内容
+          {
+            if [ -n "$PREVIOUS_TAG" ]; then
+              echo "### 变更日志 (${PREVIOUS_TAG} -> ${{ needs.version.outputs.tag_name }})"
+              echo ""
+              git log --pretty=format:"- %s (%h)" ${PREVIOUS_TAG}..HEAD
+            else
+              echo "### 初始发布"
+              echo ""
+              git log --pretty=format:"- %s (%h)"
+            fi
+          } > CHANGELOG_TMP.md
 
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          cat CHANGELOG_TMP.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          # 使用随机分隔符避免冲突
+          DELIMITER=$(openssl rand -hex 20)
+          {
+            echo "changelog<<${DELIMITER}"
+            cat CHANGELOG_TMP.md
+            echo "${DELIMITER}"
+          } >> $GITHUB_OUTPUT
 
       - name: 更新 Release 说明
         uses: softprops/action-gh-release@v1

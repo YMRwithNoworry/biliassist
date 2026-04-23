@@ -34,3 +34,13 @@ src-tauri/Cargo.lock
 # Environment
 .env
 .env.local
+
+# Windows reserved names
+nul
+NUL
+con
+CON
+prn
+PRN
+aux
+AUX
