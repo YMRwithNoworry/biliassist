@@ -218,14 +218,9 @@ fn sign_wbi_params(
     // 按 key 排序
     map.sort_by(|a, b| a.0.cmp(&b.0));
 
-    // 拼接查询字符串，过滤特殊字符
+    // 拼接查询字符串，保留所有字符（B站WBI签名需要完整参数）
     let query: String = map.iter()
-        .map(|(k, v)| {
-            let clean_v: String = v.chars()
-                .filter(|c| c.is_alphanumeric() || *c == '!' || *c == '(' || *c == ')' || *c == '\'')
-                .collect();
-            format!("{}={}", k, clean_v)
-        })
+        .map(|(k, v)| format!("{}={}", k, v))
         .collect::<Vec<_>>()
         .join("&");
 
@@ -401,6 +396,8 @@ async fn get_unreplied_comments(
     let mut page = 0u32;
     let my_mid = account.uid.parse::<i64>().unwrap_or(0);
 
+    log::info!("开始获取视频 aid={} 的评论，my_mid={}", aid, my_mid);
+
     while page < 3 {
         let aid_s = aid.to_string();
         let offset_s = next_offset.to_string();
@@ -431,12 +428,15 @@ async fn get_unreplied_comments(
 
         let empty = vec![];
         let replies = json["data"]["replies"].as_array().unwrap_or(&empty);
+        log::info!("视频 aid={} 第 {} 页获取到 {} 条评论", aid, page, replies.len());
         if replies.is_empty() { break; }
 
         for reply in replies {
             let rpid = reply["rpid"].as_u64().unwrap_or(0);
             let mid = reply["mid"].as_i64().unwrap_or(0);
             let nickname = reply["member"]["uname"].as_str().unwrap_or("").to_string();
+
+            log::debug!("评论: rpid={}, mid={}, nickname={}, my_mid={}", rpid, mid, nickname, my_mid);
 
             if mid == my_mid { continue; }
 
@@ -448,7 +448,10 @@ async fn get_unreplied_comments(
             // 同时检查 up_action.reply 字段（B站标记UP主是否回复过）
             let up_action_reply = reply["up_action"]["reply"].as_bool().unwrap_or(false);
 
+            log::debug!("评论 rpid={}: has_up_reply={}, up_action_reply={}", rpid, has_up_reply, up_action_reply);
+
             if !has_up_reply && !up_action_reply {
+                log::info!("找到未回复评论: rpid={}, mid={}, nickname={}", rpid, mid, nickname);
                 unreplied.push((rpid, mid as u64, nickname));
             }
         }
@@ -459,6 +462,7 @@ async fn get_unreplied_comments(
         tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
     }
 
+    log::info!("视频 aid={} 共找到 {} 条未回复评论", aid, unreplied.len());
     Ok(unreplied)
 }
 
@@ -476,12 +480,15 @@ async fn reply_to_comment(
     let oid_s = aid.to_string();
     let rpid_s = rpid.to_string();
 
+    log::info!("准备回复评论: aid={}, rpid={}, message_len={}", aid, rpid, message.len());
+
     let resp = get_http_client()
         .post("https://api.bilibili.com/x/v2/reply/add")
         .header("Cookie", &account.cookie)
         .header("Referer", format!("https://www.bilibili.com/video/av{}", aid))
         .header("Origin", "https://www.bilibili.com")
         .header("Accept", "application/json, text/plain, */*")
+        .header("Content-Type", "application/x-www-form-urlencoded")
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .form(&[
             ("type", "1"),
@@ -498,9 +505,10 @@ async fn reply_to_comment(
         .map_err(|e| format!("请求失败: {}", e))?;
 
     let json = resp_to_json(resp).await?;
+    log::info!("评论回复API响应: {}", json.to_string());
 
     if json["code"] != 0 {
-        log::error!("评论回复API响应: code={}, msg={}", json["code"], json["message"]);
+        log::error!("评论回复失败: code={}, msg={}", json["code"], json["message"]);
         return Err(format!("回复评论失败: {}", json["message"]));
     }
 
@@ -513,6 +521,8 @@ async fn reply_comments(
     reply_msg: &str,
     once: bool,
 ) -> Result<(), String> {
+    log::info!("开始处理视频评论自动回复，账号: {}", account.name);
+
     let videos = get_my_videos(account).await?;
     if videos.is_empty() {
         log::info!("没有找到发布的视频");
@@ -520,6 +530,8 @@ async fn reply_comments(
     }
 
     log::info!("找到 {} 个视频，检查未回复评论", videos.len());
+
+    let mut total_replied = 0u32;
 
     for aid in videos {
         let comments = match get_unreplied_comments(account, aid).await {
@@ -539,7 +551,10 @@ async fn reply_comments(
 
             if once {
                 let set = get_replied_set().read().await;
-                if set.contains(&dedup) { continue; }
+                if set.contains(&dedup) {
+                    log::debug!("已回复过，跳过: {}", dedup);
+                    continue;
+                }
                 drop(set);
             }
 
@@ -549,6 +564,7 @@ async fn reply_comments(
                 Ok(_) => {
                     if once { get_replied_set().write().await.insert(dedup); }
                     add_history(&nickname, &formatted, MsgSource::Comment).await;
+                    total_replied += 1;
                 }
                 Err(e) => log::error!("回复评论失败 aid={} rpid={}: {}", aid, rpid, e),
             }
@@ -557,6 +573,7 @@ async fn reply_comments(
         }
     }
 
+    log::info!("视频评论回复完成，共回复 {} 条", total_replied);
     Ok(())
 }
 
