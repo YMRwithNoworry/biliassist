@@ -154,13 +154,13 @@ jobs:
 
       - name: 安装 Rust (macOS)
         if: matrix.platform == 'macos-latest'
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: 安装 Rust (其他平台)
         if: matrix.platform != 'macos-latest'
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: 安装 Linux 依赖
         if: matrix.platform == 'ubuntu-22.04'
