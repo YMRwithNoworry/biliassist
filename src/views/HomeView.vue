@@ -9,12 +9,22 @@
           </svg>
           <span>BilibiliAccountManager</span>
         </div>
-        <button class="btn-sponsor" @click="goToSponsor">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-          </svg>
-          赞助
-        </button>
+        <div class="header-actions">
+          <span class="header-user">{{ auth.user?.email }}</span>
+          <button class="btn-sponsor" @click="goToSponsor">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+            </svg>
+            赞助
+          </button>
+          <button class="btn-logout" @click="logout" title="退出登录">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </header>
 
@@ -88,12 +98,20 @@
 
 <script setup>
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
+const auth = useAuthStore()
+
 const goToLogin = () => router.push('/login')
 const goToAccounts = () => router.push('/accounts')
 const goToAutoReply = () => router.push('/auto-reply')
 const goToSponsor = () => router.push('/sponsor')
+
+const logout = async () => {
+  await auth.signOut()
+  router.push('/auth')
+}
 </script>
 
 <style scoped>
@@ -150,6 +168,41 @@ const goToSponsor = () => router.push('/sponsor')
 
 .btn-sponsor:hover {
   background-color: #2EA043;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-user {
+  font-size: 13px;
+  color: #8B949E;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-logout {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: transparent;
+  border: 1px solid #30363D;
+  border-radius: 6px;
+  color: #8B949E;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-logout:hover {
+  background-color: rgba(248, 81, 73, 0.1);
+  border-color: #F85149;
+  color: #F85149;
 }
 
 /* Main */
@@ -270,6 +323,10 @@ const goToSponsor = () => router.push('/sponsor')
   }
   
   .logo span {
+    display: none;
+  }
+
+  .header-user {
     display: none;
   }
   

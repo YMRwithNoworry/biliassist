@@ -41,7 +41,7 @@
           <span>扫码赞助</span>
         </div>
         <div class="qr-container" :class="{ zoomed: isZoomed }" @click="toggleZoom">
-          <img src="/sponsor-qr.png" alt="赞助二维码" class="qr-image" :class="{ zoomed: isZoomed }"/>
+          <img :src="qrImageUrl" alt="赞助二维码" class="qr-image" :class="{ zoomed: isZoomed }"/>
         </div>
         <p class="qr-hint">使用微信或支付宝扫描上方二维码</p>
         <p class="qr-zoom-hint">
@@ -97,6 +97,9 @@ import { useRouter } from 'vue-router'
 
 const router = useRouter()
 const isZoomed = ref(false)
+
+// 使用 Vite 的 URL 导入方式处理静态资源
+const qrImageUrl = new URL('/sponsor-qr.png', import.meta.url).href
 
 const goBack = () => router.push('/')
 
