@@ -1,12 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config'
 
 function createSupabaseClient() {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+  const supabaseUrl = SUPABASE_URL
+  const supabaseAnonKey = SUPABASE_ANON_KEY
 
   if (!supabaseUrl || !supabaseAnonKey) {
     console.warn(
-      '[Supabase] 缺少配置（VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY），认证功能不可用。'
+      '[Supabase] 缺少配置，认证功能不可用。'
     )
     return null
   }

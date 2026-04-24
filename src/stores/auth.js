@@ -2,27 +2,6 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { supabase } from '../lib/supabase'
 
-function noop() {
-  return { data: null, error: new Error('Supabase 未配置') }
-}
-
-function noopError() {
-  throw new Error('Supabase 未配置')
-}
-
-const safeSupabase = supabase || {
-  auth: {
-    getSession: noop,
-    signInWithOtp: noop,
-    verifyOtp: noop,
-    signUp: noop,
-    signInWithPassword: noop,
-    signOut: () => Promise.resolve({ error: null }),
-    updateUser: noop,
-    onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } })
-  }
-}
-
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
   const session = ref(null)
@@ -30,13 +9,9 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => !!session.value && !!user.value)
 
-  const getSession = async () => {
+  const agetSession = async () => {
     try {
-      if (!supabase) {
-        loading.value = false
-        return
-      }
-      const { data: { session: currentSession } } = await safeSupabase.auth.getSession()
+      const { data: { session: currentSession } } = await supabase.auth.getSession()
       session.value = currentSession
       user.value = currentSession?.user ?? null
     } catch (error) {
@@ -47,8 +22,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const signInWithOtp = async (email) => {
-    if (!supabase) throw new Error('Supabase 未配置，请检查 .env 文件')
-    const { error } = await safeSupabase.auth.signInWithOtp({
+    const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { shouldCreateUser: true }
     })
@@ -56,8 +30,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const verifyOtp = async (email, token) => {
-    if (!supabase) throw new Error('Supabase 未配置，请检查 .env 文件')
-    const { data, error } = await safeSupabase.auth.verifyOtp({
+    const { data, error } = await supabase.auth.verifyOtp({
       email,
       token,
       type: 'email'
@@ -69,8 +42,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const signUpWithPassword = async (email, password) => {
-    if (!supabase) throw new Error('Supabase 未配置，请检查 .env 文件')
-    const { data, error } = await safeSupabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password
     })
@@ -83,8 +55,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const signInWithPassword = async (email, password) => {
-    if (!supabase) throw new Error('Supabase 未配置，请检查 .env 文件')
-    const { data, error } = await safeSupabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password
     })
@@ -95,17 +66,14 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const signOut = async () => {
-    if (supabase) {
-      const { error } = await safeSupabase.auth.signOut()
-      if (error) throw error
-    }
+    const { error } = await supabase.auth.signOut()
+    if (error) throw error
     session.value = null
     user.value = null
   }
 
   const setPassword = async (newPassword) => {
-    if (!supabase) throw new Error('Supabase 未配置，请检查 .env 文件')
-    const { error } = await safeSupabase.auth.updateUser({
+    const { error } = await supabase.auth.updateUser({
       password: newPassword
     })
     if (error) throw error
@@ -116,7 +84,7 @@ export const useAuthStore = defineStore('auth', () => {
     session,
     loading,
     isAuthenticated,
-    getSession,
+    getSession: agetSession,
     signInWithOtp,
     verifyOtp,
     signUpWithPassword,
