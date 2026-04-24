@@ -1,9 +1,9 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import { useAuthStore } from '../stores/auth'
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHashHistory(),
   routes: [
     {
       path: '/auth',
@@ -47,15 +47,25 @@ router.beforeEach(async (to, from, next) => {
   const auth = useAuthStore()
 
   if (auth.loading) {
-    await auth.getSession()
+    try {
+      await auth.getSession()
+    } catch {
+      auth.loading = false
+    }
   }
 
-  if (to.meta.requiresAuth && !auth.isAuthenticated) {
-    next({ name: 'auth', query: { redirect: to.fullPath } })
-  } else if (to.name === 'auth' && auth.isAuthenticated) {
-    next({ name: 'home' })
+  if (to.name === 'auth') {
+    if (auth.isAuthenticated) {
+      next({ name: 'home' })
+    } else {
+      next()
+    }
   } else {
-    next()
+    if (!auth.isAuthenticated) {
+      next({ name: 'auth' })
+    } else {
+      next()
+    }
   }
 })
 

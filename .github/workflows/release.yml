@@ -19,6 +19,9 @@ on:
           - minor
           - major
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   contents: write
 
@@ -43,23 +46,18 @@ jobs:
       - name: 计算新版本号
         id: version
         run: |
-          # 获取当前版本号（从 package.json）
           CURRENT_VERSION=$(node -p "require('./package.json').version")
           echo "当前版本: $CURRENT_VERSION"
 
-          # 如果是 tag 触发，使用 tag 的版本号
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             NEW_VERSION=${GITHUB_REF#refs/tags/v}
             echo "使用 tag 版本: $NEW_VERSION"
           else
-            # 解析版本号
             IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
 
-            # 确定迭代方式
             if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
               BUMP_TYPE="${{ github.event.inputs.version_bump }}"
             else
-              # 自动判断：检查 commit message
               COMMIT_MSG=$(git log -1 --pretty=%B)
               if echo "$COMMIT_MSG" | grep -qE "(BREAKING CHANGE|major:|\!:)"; then
                 BUMP_TYPE="major"
@@ -72,7 +70,6 @@ jobs:
 
             echo "迭代方式: $BUMP_TYPE"
 
-            # 计算新版本号
             case $BUMP_TYPE in
               major)
                 MAJOR=$((MAJOR + 1))
@@ -91,7 +88,6 @@ jobs:
             NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
             echo "新版本: $NEW_VERSION"
 
-            # 更新 package.json
             node -e "
               const fs = require('fs');
               const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
@@ -99,10 +95,8 @@ jobs:
               fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
             "
 
-            # 更新 Cargo.toml
             sed -i "s/^version = \"${CURRENT_VERSION}\"/version = \"${NEW_VERSION}\"/" src-tauri/Cargo.toml
 
-            # 更新 tauri.conf.json
             node -e "
               const fs = require('fs');
               const conf = JSON.parse(fs.readFileSync('./src-tauri/tauri.conf.json', 'utf8'));
@@ -110,20 +104,56 @@ jobs:
               fs.writeFileSync('./src-tauri/tauri.conf.json', JSON.stringify(conf, null, 2) + '\n');
             "
 
-            # 提交版本更新
             git add package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json
             git commit -m "chore(release): bump version to ${NEW_VERSION} [skip ci]" || true
             git push origin HEAD || true
 
-            # 创建并推送 tag
             git tag "v${NEW_VERSION}" || true
             git push origin "v${NEW_VERSION}" || true
           fi
 
-          # 设置输出
           echo "version=${NEW_VERSION}" >> $GITHUB_OUTPUT
           echo "tag_name=v${NEW_VERSION}" >> $GITHUB_OUTPUT
           echo "release_name=B站账号管理工具 v${NEW_VERSION}" >> $GITHUB_OUTPUT
+
+      - name: 生成变更日志
+        id: changelog
+        run: |
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          CHANGELOG_FILE=/tmp/changelog.md
+
+          {
+            echo "## 更新内容"
+            echo ""
+            if [ -n "$PREVIOUS_TAG" ]; then
+              echo "**变更范围**: $PREVIOUS_TAG → ${{ steps.version.outputs.tag_name }}"
+              echo ""
+              git log --pretty=format:"- %s (%h)" ${PREVIOUS_TAG}..HEAD
+            else
+              echo "**初始发布**"
+              echo ""
+              git log --pretty=format:"- %s (%h)"
+            fi
+          } > "$CHANGELOG_FILE"
+
+          echo "---" >> "$CHANGELOG_FILE"
+          echo "" >> "$CHANGELOG_FILE"
+          echo "### 全平台安装包" >> "$CHANGELOG_FILE"
+          echo "" >> "$CHANGELOG_FILE"
+          echo "| 平台 | 文件类型 |" >> "$CHANGELOG_FILE"
+          echo "|------|----------|" >> "$CHANGELOG_FILE"
+          echo "| Windows | \`.msi\`, \`.exe\` |" >> "$CHANGELOG_FILE"
+          echo "| macOS (Apple Silicon) | \`.dmg\` |" >> "$CHANGELOG_FILE"
+          echo "| macOS (Intel) | \`.dmg\` |" >> "$CHANGELOG_FILE"
+          echo "| Linux | \`.AppImage\`, \`.deb\` |" >> "$CHANGELOG_FILE"
+
+          echo "changelog-path=$CHANGELOG_FILE" >> $GITHUB_OUTPUT
+
+      - name: 上传变更日志
+        uses: actions/upload-artifact@v4
+        with:
+          name: changelog
+          path: /tmp/changelog.md
 
   build:
     needs: version
@@ -152,6 +182,12 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: 下载变更日志
+        uses: actions/download-artifact@v4
+        with:
+          name: changelog
+          path: /tmp
+
       - name: 设置 Node.js
         uses: actions/setup-node@v4
         with:
@@ -178,7 +214,7 @@ jobs:
         run: npm ci
 
       - name: 构建应用
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -186,83 +222,7 @@ jobs:
         with:
           tagName: ${{ needs.version.outputs.tag_name }}
           releaseName: ${{ needs.version.outputs.release_name }}
-          releaseBody: |
-            ## 更新内容
-
-            本次更新包含以下改进：
-
-            ### 自动生成的发布版本
-
-            **安装包说明：**
-            - `.msi` - Windows 安装包
-            - `.exe` - Windows 可执行文件
-            - `.dmg` - macOS 安装包
-            - `.AppImage` - Linux 可执行文件
-            - `.deb` - Linux Debian 安装包
-
-            **支持的功能：**
-            - B站扫码登录
-            - 自动回复评论
-            - 自动回复私信
-            - 粉丝关注自动回复
-
-            ---
-            发布于 ${{ github.event.head_commit.timestamp }}
+          releaseBodyFile: /tmp/changelog.md
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
-
-  update-release-notes:
-    needs: [version, build]
-    runs-on: ubuntu-latest
-    if: always() && needs.build.result == 'success'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: 生成变更日志
-        id: changelog
-        run: |
-          # 获取上一个 tag
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-
-          # 生成变更日志内容
-          {
-            if [ -n "$PREVIOUS_TAG" ]; then
-              echo "### 变更日志 (${PREVIOUS_TAG} -> ${{ needs.version.outputs.tag_name }})"
-              echo ""
-              git log --pretty=format:"- %s (%h)" ${PREVIOUS_TAG}..HEAD
-            else
-              echo "### 初始发布"
-              echo ""
-              git log --pretty=format:"- %s (%h)"
-            fi
-          } > CHANGELOG_TMP.md
-
-          # 使用随机分隔符避免冲突
-          DELIMITER=$(openssl rand -hex 20)
-          {
-            echo "changelog<<${DELIMITER}"
-            cat CHANGELOG_TMP.md
-            echo "${DELIMITER}"
-          } >> $GITHUB_OUTPUT
-
-      - name: 更新 Release 说明
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ needs.version.outputs.tag_name }}
-          body: |
-            ${{ steps.changelog.outputs.changelog }}
-
-            ---
-
-            **全平台安装包已就绪**
-
-            | 平台 | 文件类型 |
-            |------|----------|
-            | Windows | `.msi`, `.exe` |
-            | macOS (Apple Silicon) | `.dmg` |
-            | macOS (Intel) | `.dmg` |
-            | Linux | `.AppImage`, `.deb` |
-          append_body: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
