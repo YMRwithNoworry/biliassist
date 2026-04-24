@@ -116,38 +116,33 @@ jobs:
           echo "tag_name=v${NEW_VERSION}" >> $GITHUB_OUTPUT
           echo "release_name=B站账号管理工具 v${NEW_VERSION}" >> $GITHUB_OUTPUT
 
-      - name: 生成变更日志
-        id: changelog
+      - name: 生成变更日志文件
         run: |
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          CHANGELOG_FILE=/tmp/changelog.md
+          cat > /tmp/changelog.md << 'CHANGELOG_EOF'
+          ## 更新内容
 
-          {
-            echo "## 更新内容"
-            echo ""
-            if [ -n "$PREVIOUS_TAG" ]; then
-              echo "**变更范围**: $PREVIOUS_TAG → ${{ steps.version.outputs.tag_name }}"
-              echo ""
-              git log --pretty=format:"- %s (%h)" ${PREVIOUS_TAG}..HEAD
-            else
-              echo "**初始发布**"
-              echo ""
-              git log --pretty=format:"- %s (%h)"
-            fi
-          } > "$CHANGELOG_FILE"
-
-          echo "---" >> "$CHANGELOG_FILE"
-          echo "" >> "$CHANGELOG_FILE"
-          echo "### 全平台安装包" >> "$CHANGELOG_FILE"
-          echo "" >> "$CHANGELOG_FILE"
-          echo "| 平台 | 文件类型 |" >> "$CHANGELOG_FILE"
-          echo "|------|----------|" >> "$CHANGELOG_FILE"
-          echo "| Windows | \`.msi\`, \`.exe\` |" >> "$CHANGELOG_FILE"
-          echo "| macOS (Apple Silicon) | \`.dmg\` |" >> "$CHANGELOG_FILE"
-          echo "| macOS (Intel) | \`.dmg\` |" >> "$CHANGELOG_FILE"
-          echo "| Linux | \`.AppImage\`, \`.deb\` |" >> "$CHANGELOG_FILE"
-
-          echo "changelog-path=$CHANGELOG_FILE" >> $GITHUB_OUTPUT
+          CHANGELOG_EOF
+          if [ -n "$PREVIOUS_TAG" ]; then
+            echo "**变更范围**: ${PREVIOUS_TAG} → ${{ steps.version.outputs.tag_name }}" >> /tmp/changelog.md
+            echo "" >> /tmp/changelog.md
+            git log --pretty=format:"- %s (%h)" ${PREVIOUS_TAG}..HEAD >> /tmp/changelog.md
+          else
+            echo "**初始发布**" >> /tmp/changelog.md
+            echo "" >> /tmp/changelog.md
+            git log --pretty=format:"- %s (%h)" >> /tmp/changelog.md
+          fi
+          echo "" >> /tmp/changelog.md
+          echo "---" >> /tmp/changelog.md
+          echo "" >> /tmp/changelog.md
+          echo "### 全平台安装包" >> /tmp/changelog.md
+          echo "" >> /tmp/changelog.md
+          echo "| 平台 | 文件类型 |" >> /tmp/changelog.md
+          echo "|------|----------|" >> /tmp/changelog.md
+          echo "| Windows | .msi, .exe |" >> /tmp/changelog.md
+          echo "| macOS (Apple Silicon) | .dmg |" >> /tmp/changelog.md
+          echo "| macOS (Intel) | .dmg |" >> /tmp/changelog.md
+          echo "| Linux | .AppImage, .deb |" >> /tmp/changelog.md
 
       - name: 上传变更日志
         uses: actions/upload-artifact@v4
@@ -182,12 +177,6 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: 下载变更日志
-        uses: actions/download-artifact@v4
-        with:
-          name: changelog
-          path: /tmp
-
       - name: 设置 Node.js
         uses: actions/setup-node@v4
         with:
@@ -214,7 +203,7 @@ jobs:
         run: npm ci
 
       - name: 构建应用
-        uses: tauri-apps/tauri-action@v2
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -222,7 +211,29 @@ jobs:
         with:
           tagName: ${{ needs.version.outputs.tag_name }}
           releaseName: ${{ needs.version.outputs.release_name }}
-          releaseBodyFile: /tmp/changelog.md
+          releaseBody: "构建进行中… 稍后将更新变更日志"
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+  release-notes:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    if: always() && needs.build.result == 'success'
+    steps:
+      - run: |
+          echo "所有平台构建完成，正在更新 Release 变更日志..."
+
+      - name: 下载变更日志
+        uses: actions/download-artifact@v4
+        with:
+          name: changelog
+          path: /tmp
+
+      - name: 更新 Release 说明
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="${{ needs.version.outputs.tag_name }}"
+          cat /tmp/changelog.md
+          gh release edit "$TAG_NAME" --notes-file /tmp/changelog.md --repo ${{ github.repository }}
