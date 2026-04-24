@@ -8,7 +8,7 @@
         </svg>
         返回
       </button>
-      <h1 class="page-title">账号管理</h1>
+      <h1 class="page-title">B站账号管理</h1>
       <button class="btn-add" @click="goToLogin">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="12" y1="5" x2="12" y2="19"/>
@@ -20,6 +20,46 @@
 
     <!-- Main Content -->
     <main class="accounts-main">
+      <!-- Cloud Sync Bar -->
+      <div class="sync-bar">
+        <div class="sync-info">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
+          </svg>
+          <span class="sync-label">云同步</span>
+          <span class="sync-user" v-if="authEmail">{{ authEmail }}</span>
+        </div>
+        <div class="sync-actions">
+          <button class="sync-btn" :disabled="syncing" @click="uploadToCloud" title="上传到云端">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            上传
+          </button>
+          <button class="sync-btn" :disabled="syncing" @click="downloadFromCloud" title="从云端下载">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            下载
+          </button>
+        </div>
+      </div>
+
+      <!-- Sync Message -->
+      <div v-if="syncMsg" class="sync-msg" :class="syncType">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline v-if="syncType === 'success'" points="20 6 9 17 4 12"/>
+          <circle v-else cx="12" cy="12" r="10"/>
+          <line v-if="syncType === 'error'" x1="15" y1="9" x2="9" y2="15"/>
+          <line v-if="syncType === 'error'" x1="9" y1="9" x2="15" y2="15"/>
+        </svg>
+        {{ syncMsg }}
+      </div>
+
       <!-- Loading State -->
       <div v-if="loading" class="loading-state">
         <div class="spinner"></div>
@@ -35,8 +75,8 @@
             <line x1="23" y1="11" x2="17" y2="11"/>
           </svg>
         </div>
-        <h2 class="empty-title">暂无账号</h2>
-        <p class="empty-desc">请先扫码登录添加账号</p>
+        <h2 class="empty-title">暂无 B站账号</h2>
+        <p class="empty-desc">请先扫码登录或从云端同步</p>
         <button class="btn-primary" @click="goToLogin">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
@@ -55,7 +95,13 @@
           :class="{ active: account.active }"
         >
           <div class="account-avatar">
-            <img v-if="account.avatar" :src="account.avatar" class="avatar-img" />
+            <img
+              v-if="account.avatar"
+              :src="account.avatar"
+              class="avatar-img"
+              @error="onAvatarError($event)"
+              referrerpolicy="no-referrer"
+            />
             <span v-else class="avatar-text">{{ account.name.charAt(0).toUpperCase() }}</span>
             <div v-if="account.active" class="active-indicator"></div>
           </div>
@@ -94,13 +140,23 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { invoke } from '@tauri-apps/api/core'
+import { supabase } from '../lib/supabase'
+import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
+const auth = useAuthStore()
 const accounts = ref([])
 const loading = ref(true)
+const syncing = ref(false)
+const syncMsg = ref('')
+const syncType = ref('success')
+
+const authEmail = computed(() => auth.user?.email || '')
+
+const avatarFallbacks = ref(new Set())
 
 const loadAccounts = async () => {
   try {
@@ -112,6 +168,18 @@ const loadAccounts = async () => {
     accounts.value = []
   } finally {
     loading.value = false
+  }
+}
+
+const onAvatarError = (event) => {
+  const img = event.target
+  img.style.display = 'none'
+  const parent = img.parentElement
+  if (parent) {
+    const fallback = document.createElement('span')
+    fallback.className = 'avatar-text'
+    fallback.textContent = '?'
+    parent.appendChild(fallback)
   }
 }
 
@@ -131,6 +199,120 @@ const deleteAccount = async (uid) => {
     await loadAccounts()
   } catch (error) {
     console.error('删除账号失败:', error)
+  }
+}
+
+const showSyncMsg = (msg, type = 'success') => {
+  syncMsg.value = msg
+  syncType.value = type
+  setTimeout(() => { syncMsg.value = '' }, 4000)
+}
+
+const uploadToCloud = async () => {
+  if (syncing.value) return
+  syncing.value = true
+  syncMsg.value = ''
+
+  try {
+    const localAccounts = await invoke('get_accounts')
+    if (!Array.isArray(localAccounts) || localAccounts.length === 0) {
+      showSyncMsg('没有可上传的 B站账号', 'error')
+      syncing.value = false
+      return
+    }
+
+    if (!auth.isAuthenticated) {
+      showSyncMsg('请先登录应用账号', 'error')
+      syncing.value = false
+      return
+    }
+
+    const userId = auth.user?.id
+    if (!userId) {
+      showSyncMsg('无法获取用户信息', 'error')
+      syncing.value = false
+      return
+    }
+
+    const rows = localAccounts.map(a => ({
+      user_id: userId,
+      uid: a.uid,
+      name: a.name,
+      avatar: a.avatar || '',
+      cookie: a.cookie || '',
+      active: a.active || false,
+      created_at: a.createdAt || new Date().toISOString()
+    }))
+
+    const { error } = await supabase
+      .from('bilibili_accounts')
+      .upsert(rows, {
+        onConflict: 'user_id,uid',
+        ignoreDuplicates: false
+      })
+
+    if (error) throw error
+
+    showSyncMsg(`已上传 ${rows.length} 个 B站账号`, 'success')
+  } catch (e) {
+    showSyncMsg(`上传失败: ${e.message || e}`, 'error')
+    console.error('上传失败:', e)
+  } finally {
+    syncing.value = false
+  }
+}
+
+const downloadFromCloud = async () => {
+  if (syncing.value) return
+  syncing.value = true
+  syncMsg.value = ''
+
+  try {
+    if (!auth.isAuthenticated) {
+      showSyncMsg('请先登录应用账号', 'error')
+      syncing.value = false
+      return
+    }
+
+    const userId = auth.user?.id
+    if (!userId) {
+      showSyncMsg('无法获取用户信息', 'error')
+      syncing.value = false
+      return
+    }
+
+    const { data, error } = await supabase
+      .from('bilibili_accounts')
+      .select('uid, name, avatar, cookie, active, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true })
+
+    if (error) throw error
+
+    if (!data || data.length === 0) {
+      showSyncMsg('云端没有找到 B站账号', 'error')
+      syncing.value = false
+      return
+    }
+
+    const accounts = data.map(a => ({
+      uid: a.uid,
+      name: a.name,
+      avatar: a.avatar || '',
+      cookie: a.cookie || '',
+      active: a.active || false,
+      createdAt: a.created_at || new Date().toISOString()
+    }))
+
+    await invoke('sync_accounts', { accounts })
+    await loadAccounts()
+
+    showSyncMsg(`已下载 ${accounts.length} 个 B站账号`, 'success')
+  } catch (e) {
+    showSyncMsg(`下载失败: ${e.message || e}`, 'error')
+    console.error('下载失败:', e)
+  } finally {
+    syncing.value = false
   }
 }
 
@@ -210,7 +392,93 @@ onMounted(() => loadAccounts())
 .accounts-main {
   max-width: 768px;
   margin: 0 auto;
-  padding: 32px 24px;
+  padding: 24px;
+}
+
+/* Sync Bar */
+.sync-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background-color: #161B22;
+  border: 1px solid #30363D;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.sync-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #8B949E;
+}
+
+.sync-label {
+  color: #E6EDF3;
+  font-weight: 500;
+}
+
+.sync-user {
+  color: #8B949E;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sync-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background-color: #21262D;
+  border: 1px solid #30363D;
+  border-radius: 6px;
+  color: #C9D1D9;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sync-btn:hover:not(:disabled) {
+  background-color: #30363D;
+  border-color: #484F58;
+}
+
+.sync-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Sync Message */
+.sync-msg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.sync-msg.success {
+  background-color: rgba(63, 185, 80, 0.1);
+  border: 1px solid rgba(63, 185, 80, 0.3);
+  color: #3FB950;
+}
+
+.sync-msg.error {
+  background-color: rgba(248, 81, 73, 0.1);
+  border: 1px solid rgba(248, 81, 73, 0.3);
+  color: #F85149;
 }
 
 /* Loading State */
@@ -429,7 +697,7 @@ onMounted(() => loadAccounts())
   }
   
   .accounts-main {
-    padding: 24px 16px;
+    padding: 16px;
   }
   
   .account-card {
@@ -443,6 +711,20 @@ onMounted(() => loadAccounts())
   
   .avatar-text {
     font-size: 16px;
+  }
+
+  .sync-bar {
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .sync-info {
+    justify-content: center;
+  }
+
+  .sync-actions {
+    justify-content: center;
   }
 }
 </style>

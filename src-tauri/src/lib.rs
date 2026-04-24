@@ -18,6 +18,11 @@ async fn get_accounts() -> Result<Vec<storage::Account>, String> {
 }
 
 #[tauri::command]
+async fn sync_accounts(accounts: Vec<storage::Account>) -> Result<Vec<storage::Account>, String> {
+    storage::sync_accounts(accounts).await
+}
+
+#[tauri::command]
 async fn activate_account(uid: String) -> Result<(), String> {
     storage::activate_account(uid).await
 }
@@ -59,6 +64,7 @@ pub fn run() {
             get_qr_code,
             check_login_status,
             get_accounts,
+            sync_accounts,
             activate_account,
             delete_account,
             get_auto_reply_settings,

@@ -133,6 +133,11 @@ pub async fn get_accounts() -> Result<Vec<Account>, String> {
     load_accounts_internal().await
 }
 
+pub async fn sync_accounts(accounts: Vec<Account>) -> Result<Vec<Account>, String> {
+    save_accounts_internal(&accounts).await?;
+    Ok(accounts)
+}
+
 pub async fn activate_account(uid: String) -> Result<(), String> {
     let mut accounts = load_accounts_internal().await?;
     accounts.iter_mut().for_each(|a| a.active = a.uid == uid);
