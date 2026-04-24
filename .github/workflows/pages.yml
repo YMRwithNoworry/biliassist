@@ -1,0 +1,45 @@
+name: GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'docs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 准备 Pages 资源
+        run: |
+          cp -r docs _site
+          echo "已复制 docs 到 _site"
+
+      - name: 配置 Pages
+        uses: actions/configure-pages@v4
+
+      - name: 上传资源
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: 部署到 Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

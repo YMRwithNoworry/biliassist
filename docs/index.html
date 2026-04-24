@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BilibiliAccountManager — B站账号管理工具</title>
+  <meta name="description" content="BilibiliAccountManager 是一款开源的桌面应用，支持扫码登录、多账号管理和智能自动回复。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@700&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&family=Source+Code+Pro:wght@400&display=swap" rel="stylesheet">
+  <style>
+    /* ===== Open Serif Design System ===== */
+    :root {
+      --primary: #3366CC;
+      --primary-hover: #2A4D99;
+      --secondary: #6B4BA1;
+      --neutral: #72777D;
+      --bg: #F6F6F6;
+      --surface: #FFFFFF;
+      --text: #202122;
+      --text-secondary: #54595D;
+      --border: #C8CCD1;
+      --success: #14866D;
+      --warning: #EDAB00;
+      --error: #D33;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+      font-size: 16px;
+      line-height: 1.65;
+      color: var(--text);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+    a:hover { color: var(--primary-hover); text-decoration: underline; }
+    a:visited { color: var(--secondary); }
+
+    img { max-width: 100%; height: auto; display: block; }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ===== Top Header ===== */
+    .site-header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 0;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .site-header .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .site-logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
+      font-weight: 700;
+      font-size: 18px;
+      color: var(--text);
+      text-decoration: none;
+    }
+    .site-logo:hover { text-decoration: none; color: var(--text); }
+    .header-nav { display: flex; align-items: center; gap: 20px; }
+    .header-nav a {
+      font-family: 'Source Serif 4', Georgia, serif;
+      font-size: 14px;
+      color: var(--primary);
+    }
+    .header-nav a:hover { text-decoration: underline; }
+
+    /* ===== Hero ===== */
+    .hero {
+      padding: 64px 0 48px;
+      text-align: center;
+    }
+    .hero h1 {
+      font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
+      font-weight: 700;
+      font-size: 28px;
+      color: var(--text);
+      margin-bottom: 16px;
+    }
+    .hero p {
+      font-size: 16px;
+      color: var(--text-secondary);
+      max-width: 640px;
+      margin: 0 auto 24px;
+    }
+    .hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 12px;
+      border-radius: 2px;
+      font-family: 'Source Serif 4', Georgia, serif;
+      font-size: 14px;
+      font-weight: 400;
+      cursor: pointer;
+      text-decoration: none;
+      border: none;
+      line-height: 1;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { text-decoration: none; opacity: 0.9; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-hover); color: #fff; }
+    .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: #EAECF0; }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-success:hover { background: #0F6B56; color: #fff; }
+
+    /* ===== Section ===== */
+    section { padding: 40px 0; }
+    section + section { border-top: 1px solid var(--border); }
+
+    .section-title {
+      font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
+      font-weight: 700;
+      font-size: 22px;
+      color: var(--text);
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+    }
+
+    /* ===== Features ===== */
+    .features-grid { display: flex; flex-direction: column; gap: 20px; }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      padding: 16px 20px;
+    }
+    .feature-card h3 {
+      font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
+      font-weight: 700;
+      font-size: 18px;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .feature-card p {
+      font-size: 15px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+    .feature-card ul {
+      list-style: disc;
+      padding-left: 20px;
+      margin-top: 8px;
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+    .feature-card li { margin-bottom: 4px; }
+
+    /* ===== Download ===== */
+    .download-grid { display: flex; flex-direction: column; gap: 16px; }
+    .download-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .download-info h4 {
+      font-family: 'Source Serif 4', Georgia, serif;
+      font-weight: 600;
+      font-size: 16px;
+      color: var(--text);
+      margin-bottom: 2px;
+    }
+    .download-info p {
+      font-size: 13px;
+      color: var(--neutral);
+    }
+    .download-links { display: flex; gap: 8px; flex-wrap: wrap; }
+    .download-links a {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      height: 28px;
+      padding: 0 10px;
+      border-radius: 2px;
+      font-family: 'Source Serif 4', Georgia, serif;
+      font-size: 13px;
+      color: var(--primary);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      text-decoration: none;
+    }
+    .download-links a:hover {
+      background: #EAECF0;
+      text-decoration: none;
+    }
+    .download-links .btn-success {
+      color: #fff;
+      background: var(--success);
+      border-color: var(--success);
+    }
+    .download-links .btn-success:hover { background: #0F6B56; }
+    .download-note {
+      font-size: 13px;
+      color: var(--neutral);
+      margin-top: 8px;
+    }
+
+    /* ===== Sponsor ===== */
+    .sponsor-layout {
+      display: flex;
+      gap: 32px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .sponsor-info { flex: 1; min-width: 240px; }
+    .sponsor-info p {
+      font-size: 15px;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+    }
+    .sponsor-info ul {
+      list-style: disc;
+      padding-left: 20px;
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+    .sponsor-info li { margin-bottom: 6px; }
+    .sponsor-qr {
+      flex-shrink: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      padding: 16px;
+      text-align: center;
+    }
+    .sponsor-qr img {
+      width: 180px;
+      height: 180px;
+      object-fit: contain;
+    }
+    .sponsor-qr p {
+      font-size: 12px;
+      color: var(--neutral);
+      margin-top: 8px;
+    }
+
+    /* ===== Footer ===== */
+    .site-footer {
+      border-top: 1px solid var(--border);
+      padding: 24px 0 32px;
+      text-align: center;
+    }
+    .site-footer p {
+      font-size: 12px;
+      color: var(--neutral);
+      margin-bottom: 4px;
+    }
+    .site-footer a { font-size: 12px; }
+
+    /* ===== TOC ===== */
+    .toc {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      padding: 12px 16px;
+      margin-bottom: 24px;
+    }
+    .toc-title {
+      font-family: 'Source Serif 4', Georgia, serif;
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .toc-list {
+      list-style: none;
+      padding: 0;
+      font-size: 14px;
+    }
+    .toc-list li {
+      padding: 2px 0;
+      border-left: 1px solid var(--border);
+      padding-left: 12px;
+      margin-bottom: 2px;
+    }
+    .toc-list a { color: var(--primary); }
+
+    /* ===== Inline code ===== */
+    code {
+      font-family: 'Source Code Pro', 'Courier New', monospace;
+      font-size: 14px;
+      background: var(--bg);
+      padding: 1px 4px;
+      border-radius: 2px;
+      color: var(--text);
+    }
+
+    /* ===== Responsive ===== */
+    @media (max-width: 640px) {
+      .container { padding: 0 16px; }
+      .hero { padding: 40px 0 32px; }
+      .hero h1 { font-size: 24px; }
+      section { padding: 28px 0; }
+      .section-title { font-size: 20px; }
+      .download-card { flex-direction: column; align-items: flex-start; }
+      .sponsor-layout { flex-direction: column; align-items: center; }
+      .header-nav { gap: 12px; }
+      .header-nav a { font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ===== Header ===== -->
+<header class="site-header">
+  <div class="container">
+    <a href="/" class="site-logo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3366CC" stroke-width="2">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </svg>
+      BilibiliAccountManager
+    </a>
+    <nav class="header-nav">
+      <a href="#features">功能介绍</a>
+      <a href="#download">下载</a>
+      <a href="#sponsor">赞助</a>
+    </nav>
+  </div>
+</header>
+
+<main class="container">
+
+  <!-- ===== Hero ===== -->
+  <section class="hero">
+    <h1>B站账号管理工具</h1>
+    <p>一款开源桌面应用，支持扫码登录、多账号管理、评论和私信自动回复。基于 Tauri 构建，轻量、安全、跨平台。</p>
+    <div class="hero-actions">
+      <a href="#download" class="btn btn-success">下载安装包</a>
+      <a href="#features" class="btn btn-secondary">了解功能</a>
+    </div>
+  </section>
+
+  <!-- ===== Table of Contents ===== -->
+  <div class="toc">
+    <div class="toc-title">目录</div>
+    <ul class="toc-list">
+      <li><a href="#features">功能介绍</a></li>
+      <li><a href="#download">下载与安装</a></li>
+      <li><a href="#sponsor">赞助支持</a></li>
+    </ul>
+  </div>
+
+  <!-- ===== Features ===== -->
+  <section id="features">
+    <h2 class="section-title">功能介绍</h2>
+    <div class="features-grid">
+      <div class="feature-card">
+        <h3>扫码登录</h3>
+        <p>使用 B站 App 扫描二维码即可快速登录，无需手动输入账号密码。支持多人账号轮流使用，登录状态安全持久。</p>
+      </div>
+      <div class="feature-card">
+        <h3>多账号管理</h3>
+        <p>同时管理多个 B站账号，一键切换当前活跃账号。支持查看账号基本信息（用户名、UID），方便多账号场景下的内容运营。</p>
+        <ul>
+          <li>多账号快速切换</li>
+          <li>账号添加与删除</li>
+          <li>活跃账号实时标识</li>
+        </ul>
+      </div>
+      <div class="feature-card">
+        <h3>智能自动回复</h3>
+        <p>支持对视频评论、私信、粉丝关注三种来源自动回复。可自定义回复内容，支持 <code>{用户名}</code>、<code>{时间}</code> 变量，提供灵活的回复配置。</p>
+        <ul>
+          <li>自定义回复内容（支持变量）</li>
+          <li>可配置回复来源（评论 / 私信 / 关注）</li>
+          <li>间隔时间控制，避免频繁发送</li>
+          <li>每个用户只回复一次选项</li>
+          <li>回复记录查看与管理</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Download ===== -->
+  <section id="download">
+    <h2 class="section-title">下载与安装</h2>
+    <p style="font-size:15px;color:var(--text-secondary);margin-bottom:20px;">
+      从 GitHub Releases 页面下载对应平台的安装包。也可通过源码自行构建。
+    </p>
+    <div class="download-grid">
+      <div class="download-card">
+        <div class="download-info">
+          <h4>Windows</h4>
+          <p>.msi 安装包 或 .exe 安装程序</p>
+        </div>
+        <div class="download-links">
+          <a href="https://github.com/YMRwithNoworry/biliassist/releases/latest" class="btn-success" target="_blank">下载 .msi</a>
+          <a href="https://github.com/YMRwithNoworry/biliassist/releases/latest" target="_blank">下载 .exe</a>
+        </div>
+      </div>
+      <div class="download-card">
+        <div class="download-info">
+          <h4>macOS</h4>
+          <p>Apple Silicon (M 系列) · Intel</p>
+        </div>
+        <div class="download-links">
+          <a href="https://github.com/YMRwithNoworry/biliassist/releases/latest" class="btn-success" target="_blank">下载 .dmg (Apple Silicon)</a>
+          <a href="https://github.com/YMRwithNoworry/biliassist/releases/latest" target="_blank">下载 .dmg (Intel)</a>
+        </div>
+      </div>
+      <div class="download-card">
+        <div class="download-info">
+          <h4>Linux</h4>
+          <p>.AppImage · .deb</p>
+        </div>
+        <div class="download-links">
+          <a href="https://github.com/YMRwithNoworry/biliassist/releases/latest" class="btn-success" target="_blank">下载 .AppImage</a>
+          <a href="https://github.com/YMRwithNoworry/biliassist/releases/latest" target="_blank">下载 .deb</a>
+        </div>
+      </div>
+    </div>
+    <p class="download-note">
+      所有安装包通过 GitHub Actions 自动构建，由 GitHub 全球 CDN 加速分发。查看
+      <a href="https://github.com/YMRwithNoworry/biliassist/releases" target="_blank">所有 Release</a>。
+    </p>
+  </section>
+
+  <!-- ===== Sponsor ===== -->
+  <section id="sponsor">
+    <h2 class="section-title">赞助支持</h2>
+    <div class="sponsor-layout">
+      <div class="sponsor-info">
+        <p>
+          感谢您对 BilibiliAccountManager 的关注与使用。如果您觉得这个工具对您有帮助，欢迎通过赞助支持项目的持续开发。每一份支持都是极大的鼓励。
+        </p>
+        <ul>
+          <li>持续维护与 Bug 修复</li>
+          <li>新功能开发与优化</li>
+          <li>服务器与基础设施</li>
+          <li>文档与教程制作</li>
+        </ul>
+      </div>
+      <div class="sponsor-qr">
+        <img src="sponsor-qr.png" alt="赞助二维码">
+        <p>使用微信或支付宝扫描</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ===== Footer ===== -->
+<footer class="site-footer">
+  <div class="container">
+    <p>BilibiliAccountManager — 开源 B站账号管理工具</p>
+    <p>
+      <a href="https://github.com/YMRwithNoworry/biliassist" target="_blank">GitHub</a>
+      &nbsp;·&nbsp;
+      <a href="https://github.com/YMRwithNoworry/biliassist/releases" target="_blank">下载</a>
+      &nbsp;·&nbsp;
+      <a href="#sponsor">赞助</a>
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>
