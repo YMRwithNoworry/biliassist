@@ -1,6 +1,6 @@
 {
   "name": "bilibili-account-manager",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "description": "B站账号管理工具 - 支持扫码登录和自动回复",
   "type": "module",
   "scripts": {
