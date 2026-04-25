@@ -90,9 +90,13 @@ pub trait MessageHandler: Send + Sync {
 
 /// 格式化消息
 pub fn format_message(template: &str, username: &str) -> String {
+    use chrono::{FixedOffset, TimeZone};
+    let beijing_now = FixedOffset::east_opt(8 * 3600)
+        .unwrap()
+        .from_utc_datetime(&chrono::Utc::now().naive_utc());
     template
         .replace("{用户名}", username)
-        .replace("{时间}", &chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string())
+        .replace("{时间}", &beijing_now.format("%Y-%m-%d %H:%M:%S").to_string())
 }
 
 /// 判断是否为风控错误

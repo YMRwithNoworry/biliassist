@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use chrono::Utc;
+use chrono::{FixedOffset, TimeZone, Utc};
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
@@ -114,7 +114,10 @@ pub async fn save_account(user_info: &UserInfo) -> Result<(), String> {
         avatar: user_info.avatar.clone(),
         cookie: user_info.cookie.clone(),
         active: accounts.is_empty(),
-        created_at: Utc::now().to_rfc3339(),
+        created_at: FixedOffset::east_opt(8 * 3600)
+            .unwrap()
+            .from_utc_datetime(&Utc::now().naive_utc())
+            .to_rfc3339(),
     };
 
     // 如果新账号设为 active，其他取消

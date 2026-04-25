@@ -29,6 +29,20 @@
         </div>
       </div>
 
+      <!-- Autostart -->
+      <div class="card">
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-title">开机自启</div>
+            <div class="setting-desc">系统启动后自动在后台运行</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" v-model="autostartEnabled" @change="toggleAutostart" />
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+      </div>
+
       <!-- Sources -->
       <div class="card">
         <div class="card-header">
@@ -188,6 +202,7 @@ const interval = ref(60)
 const replyOnlyOnce = ref(true)
 const sources = ref(['comment', 'directMessage', 'follow'])
 const history = ref([])
+const autostartEnabled = ref(false)
 
 const sourceLabel = (s) => {
   const map = { comment: '评论', directMessage: '私信', follow: '关注' }
@@ -215,6 +230,11 @@ const load = async () => {
     history.value = s.history || []
   } catch (e) {
     console.error('加载设置失败:', e)
+  }
+  try {
+    autostartEnabled.value = await invoke('get_autostart_status')
+  } catch (e) {
+    console.error('加载开机自启状态失败:', e)
   }
 }
 
@@ -251,6 +271,15 @@ const manualReply = async () => {
   } catch (e) {
     alert('执行失败: ' + e)
     console.error('手动回复失败:', e)
+  }
+}
+
+const toggleAutostart = async () => {
+  try {
+    await invoke('set_autostart', { enabled: autostartEnabled.value })
+  } catch (e) {
+    console.error('设置开机自启失败:', e)
+    autostartEnabled.value = !autostartEnabled.value
   }
 }
 

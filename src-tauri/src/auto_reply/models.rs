@@ -1,4 +1,11 @@
+use chrono::{FixedOffset, TimeZone};
 use serde::{Deserialize, Serialize};
+
+pub(crate) fn beijing_now() -> chrono::DateTime<FixedOffset> {
+    FixedOffset::east_opt(8 * 3600)
+        .unwrap()
+        .from_utc_datetime(&chrono::Utc::now().naive_utc())
+}
 
 /// 消息来源类型
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -71,7 +78,7 @@ impl ReplyHistory {
     pub fn new(user: String, message: String, source: MsgSource) -> Self {
         Self {
             user,
-            time: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            time: beijing_now().format("%Y-%m-%d %H:%M:%S").to_string(),
             message,
             source,
         }
