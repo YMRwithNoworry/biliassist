@@ -24,28 +24,54 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { RouterView } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 
 const initialLoading = ref(true)
 const initError = ref('')
+let timeoutTimer = null
 
 onMounted(async () => {
+  timeoutTimer = setTimeout(() => {
+    if (initialLoading.value) {
+      initialLoading.value = false
+      initError.value = '应用启动超时，请检查网络连接后重试'
+    }
+  }, 8000)
+
   try {
     const auth = useAuthStore()
     await auth.getSession()
   } catch (e) {
     initError.value = e?.message || '应用初始化失败'
   } finally {
+    clearTimeout(timeoutTimer)
     initialLoading.value = false
   }
+})
+
+onUnmounted(() => {
+  if (timeoutTimer) clearTimeout(timeoutTimer)
 })
 
 const retry = () => {
   initError.value = ''
   initialLoading.value = true
-  onMounted()
+  timeoutTimer = setTimeout(() => {
+    if (initialLoading.value) {
+      initialLoading.value = false
+      initError.value = '应用启动超时，请检查网络连接后重试'
+    }
+  }, 8000)
+
+  const auth = useAuthStore()
+  auth.getSession().catch(e => {
+    initError.value = e?.message || '应用初始化失败'
+  }).finally(() => {
+    clearTimeout(timeoutTimer)
+    initialLoading.value = false
+  })
 }
 </script>
 
