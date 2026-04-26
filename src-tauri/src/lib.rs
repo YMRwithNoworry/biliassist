@@ -4,7 +4,7 @@ mod auto_reply;
 
 use tauri::Manager;
 use tauri::menu::{Menu, MenuItem};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
 #[tauri::command]
 async fn get_qr_code() -> Result<bilibili::QrCodeResponse, String> {
@@ -76,6 +76,14 @@ async fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), Strin
     }
 }
 
+/// 显示主窗口（供托盘事件调用）
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 pub fn run() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
@@ -85,7 +93,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(
             tauri_plugin_autostart::Builder::new()
-                .args([] as [&str; 0])
+                .args(["--from-autostart"])
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
@@ -105,6 +113,12 @@ pub fn run() {
         .setup(|app| {
             let _handle = app.handle().clone();
 
+            // 检测是否由开机自启启动
+            let is_autostart = std::env::args().any(|a| a == "--from-autostart");
+            if is_autostart {
+                log::info!("应用由开机自启启动，将隐藏到系统托盘运行");
+            }
+
             // 初始化存储目录和自动回复
             tauri::async_runtime::block_on(async {
                 storage::init().await;
@@ -113,6 +127,13 @@ pub fn run() {
                     auto_reply::start_auto_reply_service().await;
                 });
             });
+
+            // 开机自启时先隐藏窗口，等用户点击托盘再显示
+            if is_autostart {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
 
             // 创建系统托盘
             let show_i = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)
@@ -134,16 +155,19 @@ pub fn run() {
                 .menu(&menu)
                 .on_menu_event(|app, event| {
                     match event.id.as_ref() {
-                        "show" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
-                        "quit" => {
-                            app.exit(0);
-                        }
+                        "show" => show_main_window(app),
+                        "quit" => app.exit(0),
                         _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        show_main_window(tray.app_handle());
                     }
                 })
                 .build(app)
