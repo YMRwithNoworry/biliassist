@@ -1,6 +1,7 @@
 use super::handler::{MessageHandler, Message};
 use super::http::{get_http_client, resp_to_json, extract_csrf};
 use super::models::MsgSource;
+use super::wbi;
 use crate::bilibili::UserInfo;
 use async_trait::async_trait;
 
@@ -13,6 +14,78 @@ impl CommentHandler {
     }
 
     async fn get_videos(&self, account: &UserInfo) -> Result<Vec<u64>, String> {
+        let mut videos = Vec::new();
+        let mut page = 1u32;
+
+        // 获取WBI密钥
+        let (img_key, sub_key) = match wbi::get_wbi_keys(&account.cookie).await {
+            Ok(keys) => keys,
+            Err(e) => {
+                log::warn!("获取WBI密钥失败，尝试使用旧API: {}", e);
+                return self.get_videos_fallback(account).await;
+            }
+        };
+
+        let base_params = vec![
+            ("mid".to_string(), account.uid.clone()),
+            ("ps".to_string(), "30".to_string()),
+            ("order".to_string(), "pubdate".to_string()),
+        ];
+
+        while page <= 5 {
+            let pn = page.to_string();
+            let mut params = base_params.clone();
+            params.push(("pn".to_string(), pn));
+
+            let signed = wbi::sign_wbi_params(&params, &img_key, &sub_key);
+
+            let resp = get_http_client()
+                .get("https://api.bilibili.com/x/space/wbi/arc/search")
+                .header("Cookie", &account.cookie)
+                .header("Referer", format!("https://space.bilibili.com/{}/video", account.uid))
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .query(&signed.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect::<Vec<_>>())
+                .send()
+                .await
+                .map_err(|e| format!("请求视频列表失败: {}", e))?;
+
+            let json = resp_to_json(resp).await?;
+
+            if json["code"] != 0 {
+                if page == 1 {
+                    log::warn!("获取视频列表返回: code={}, msg={}", json["code"], json["message"]);
+                }
+                break;
+            }
+
+            let empty = vec![];
+            let vlist = json["data"]["list"]["vlist"].as_array().or_else(|| {
+                json["data"]["list"]["vms"].as_array()
+            }).unwrap_or(&empty);
+
+            if vlist.is_empty() { break; }
+
+            for v in vlist {
+                if let Some(aid) = v["aid"].as_u64().or_else(|| v["aid"].as_str().and_then(|s| s.parse().ok())) {
+                    videos.push(aid);
+                }
+            }
+
+            let count = json["data"]["page"]["count"].as_u64().unwrap_or(0);
+            let pn_val = json["data"]["page"]["pn"].as_u64().unwrap_or(1);
+            let ps_val = json["data"]["page"]["ps"].as_u64().unwrap_or(30);
+            if pn_val * ps_val >= count { break; }
+
+            page += 1;
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        }
+
+        log::info!("获取到 {} 个视频", videos.len());
+        Ok(videos)
+    }
+
+    /// 旧API降级方案
+    async fn get_videos_fallback(&self, account: &UserInfo) -> Result<Vec<u64>, String> {
         let mut videos = Vec::new();
         let mut page = 1u32;
 
@@ -70,29 +143,41 @@ impl CommentHandler {
 
     async fn get_unreplied(&self, account: &UserInfo, aid: u64) -> Result<Vec<Message>, String> {
         let mut messages = Vec::new();
-        let mut next_offset: i64 = 0;
+        let mut next: i64 = 1;
         let mut page = 0u32;
         let my_mid = account.uid.parse::<i64>().unwrap_or(0);
 
         log::info!("开始获取视频 aid={} 的评论，my_mid={}", aid, my_mid);
 
-        while page < 3 {
-            let aid_s = aid.to_string();
-            let offset_s = next_offset.to_string();
+        // 获取WBI密钥用于签名
+        let wbi_keys = wbi::get_wbi_keys(&account.cookie).await.ok();
 
-            let resp = get_http_client()
-                .get("https://api.bilibili.com/x/v2/reply")
+        while page < 10 {
+            let aid_s = aid.to_string();
+            let next_s = next.to_string();
+
+            let req = get_http_client()
+                .get("https://api.bilibili.com/x/v2/reply/main")
                 .header("Cookie", &account.cookie)
                 .header("Referer", format!("https://www.bilibili.com/video/av{}", aid))
-                .query(&[
-                    ("type", "1"),
-                    ("oid", &aid_s),
-                    ("sort", "2"),
-                    ("offset", &offset_s),
-                    ("mode", "3"),
-                    ("plat", "1"),
-                    ("web_location", "1315875"),
-                ])
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+
+            // 构建基础参数
+            let mut params = vec![
+                ("type".to_string(), "1".to_string()),
+                ("oid".to_string(), aid_s),
+                ("mode".to_string(), "3".to_string()),
+                ("ps".to_string(), "20".to_string()),
+                ("next".to_string(), next_s),
+            ];
+
+            // 如果有WBI密钥，对参数进行签名
+            if let Some((ref img_key, ref sub_key)) = wbi_keys {
+                params = wbi::sign_wbi_params(&params, img_key, sub_key);
+            }
+
+            let resp = req
+                .query(&params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect::<Vec<_>>())
                 .send()
                 .await
                 .map_err(|e| format!("请求评论失败: {}", e))?;
@@ -124,9 +209,12 @@ impl CommentHandler {
 
                 let up_action_reply = reply["up_action"]["reply"].as_bool().unwrap_or(false);
 
-                log::debug!("评论 rpid={}: has_up_reply={}, up_action_reply={}", rpid, has_up_reply, up_action_reply);
+                let reply_control_reply = reply["reply_control"]["reply"].as_bool().unwrap_or(false);
 
-                if !has_up_reply && !up_action_reply {
+                log::debug!("评论 rpid={}: has_up_reply={}, up_action_reply={}, reply_control_reply={}",
+                    rpid, has_up_reply, up_action_reply, reply_control_reply);
+
+                if !has_up_reply && !up_action_reply && !reply_control_reply {
                     log::info!("找到未回复评论: rpid={}, mid={}, nickname={}", rpid, mid, nickname);
                     let extra = serde_json::json!({
                         "aid": aid,
@@ -142,8 +230,16 @@ impl CommentHandler {
                 }
             }
 
-            next_offset = json["data"]["offset"].as_i64().unwrap_or(0);
-            if next_offset == 0 { break; }
+            // 检查是否还有下一页
+            let is_end = json["data"]["cursor"]["is_end"].as_bool().unwrap_or(true);
+            if is_end {
+                log::info!("视频 aid={} 评论已全部加载完毕", aid);
+                break;
+            }
+
+            next = json["data"]["cursor"]["next"].as_i64().unwrap_or(0);
+            if next == 0 { break; }
+
             page += 1;
             tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
         }
