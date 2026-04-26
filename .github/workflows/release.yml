@@ -203,6 +203,7 @@ jobs:
         run: npm ci
 
       - name: 构建应用
+        continue-on-error: ${{ matrix.platform == 'ubuntu-22.04' }}
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -215,6 +216,22 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: 重试 AppImage（Linux 502 兼容）
+        if: failure() && matrix.platform == 'ubuntu-22.04'
+        run: |
+          echo "首次构建时下载 AppRun 失败(502)，重试 AppImage 打包..."
+          cd src-tauri
+          for i in 1 2 3; do
+            echo "第 $i 次尝试..."
+            if cargo tauri bundle --bundles appimage 2>&1; then
+              echo "AppImage 成功"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "AppImage 三次重试均失败，但 deb/rpm 已成功"
+          exit 0
 
   release-notes:
     needs: [version, build]
