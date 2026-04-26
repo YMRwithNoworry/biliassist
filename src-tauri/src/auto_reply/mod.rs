@@ -30,12 +30,11 @@ impl AutoReplyService {
         log::info!("自动回复服务启动");
 
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-
             let state = get_global_state();
             let settings = state.get_settings().await;
 
             if !settings.enabled {
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                 continue;
             }
 
