@@ -26,51 +26,76 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { RouterView } from 'vue-router'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useAuthStore } from './stores/auth'
 
 const initialLoading = ref(true)
 const initError = ref('')
-let timeoutTimer = null
+let mounted = false
+
+const MAX_RETRIES = 3
+const BASE_TIMEOUT = 10000
+
+async function initSession(retries = MAX_RETRIES) {
+  const auth = useAuthStore()
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      await Promise.race([
+        auth.getSession(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), BASE_TIMEOUT)
+        )
+      ])
+      initError.value = ''
+      return true
+    } catch (e) {
+      const isTimeout = e?.message === 'timeout'
+      console.warn(`[App] 初始化失败 (第${attempt}次):`, e?.message)
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 1000 * attempt))
+        continue
+      }
+      // 所有重试用尽，只在用户可见时显示错误
+      if (!isTimeout || attempt >= retries) {
+        initError.value = '应用初始化失败，请检查网络连接后重试'
+      }
+    }
+  }
+  return false
+}
 
 onMounted(async () => {
-  timeoutTimer = setTimeout(() => {
-    if (initialLoading.value) {
-      initialLoading.value = false
-      initError.value = '应用启动超时，请检查网络连接后重试'
-    }
-  }, 8000)
+  mounted = true
+  await initSession()
+  if (mounted) initialLoading.value = false
 
+  // 监听窗口显示事件（从托盘恢复时自动重试）
   try {
-    const auth = useAuthStore()
-    await auth.getSession()
-  } catch (e) {
-    initError.value = e?.message || '应用初始化失败'
-  } finally {
-    clearTimeout(timeoutTimer)
-    initialLoading.value = false
+    const win = getCurrentWindow()
+    const unlisten = await win.listen('tauri://visibility-change', (event) => {
+      if (event.payload && initError.value && mounted) {
+        initialLoading.value = true
+        initError.value = ''
+        initSession().finally(() => {
+          if (mounted) initialLoading.value = false
+        })
+      }
+    })
+    onUnmounted(unlisten)
+  } catch {
+    // 忽略 API 不可用的情况
   }
 })
 
 onUnmounted(() => {
-  if (timeoutTimer) clearTimeout(timeoutTimer)
+  mounted = false
 })
 
 const retry = () => {
-  initError.value = ''
   initialLoading.value = true
-  timeoutTimer = setTimeout(() => {
-    if (initialLoading.value) {
-      initialLoading.value = false
-      initError.value = '应用启动超时，请检查网络连接后重试'
-    }
-  }, 8000)
-
-  const auth = useAuthStore()
-  auth.getSession().catch(e => {
-    initError.value = e?.message || '应用初始化失败'
-  }).finally(() => {
-    clearTimeout(timeoutTimer)
-    initialLoading.value = false
+  initError.value = ''
+  initSession().finally(() => {
+    if (mounted) initialLoading.value = false
   })
 }
 </script>

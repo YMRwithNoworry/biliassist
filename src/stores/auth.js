@@ -2,6 +2,11 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { supabase } from '../lib/supabase'
 
+function requireSupabase() {
+  if (!supabase) throw new Error('Supabase 未配置，请检查 .env 文件')
+  return supabase
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
   const session = ref(null)
@@ -11,7 +16,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   const agetSession = async () => {
     try {
-      const { data: { session: currentSession } } = await supabase.auth.getSession()
+      const { data: { session: currentSession } } = await requireSupabase().auth.getSession()
       session.value = currentSession
       user.value = currentSession?.user ?? null
     } catch (error) {
@@ -22,7 +27,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const signInWithOtp = async (email) => {
-    const { error } = await supabase.auth.signInWithOtp({
+    const { error } = await requireSupabase().auth.signInWithOtp({
       email,
       options: { shouldCreateUser: true }
     })
@@ -30,7 +35,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const verifyOtp = async (email, token) => {
-    const { data, error } = await supabase.auth.verifyOtp({
+    const { data, error } = await requireSupabase().auth.verifyOtp({
       email,
       token,
       type: 'email'
@@ -42,7 +47,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const signUpWithPassword = async (email, password) => {
-    const { data, error } = await supabase.auth.signUp({
+    const { data, error } = await requireSupabase().auth.signUp({
       email,
       password
     })
@@ -55,7 +60,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const signInWithPassword = async (email, password) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await requireSupabase().auth.signInWithPassword({
       email,
       password
     })
@@ -66,14 +71,14 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut()
+    const { error } = await requireSupabase().auth.signOut()
     if (error) throw error
     session.value = null
     user.value = null
   }
 
   const setPassword = async (newPassword) => {
-    const { error } = await supabase.auth.updateUser({
+    const { error } = await requireSupabase().auth.updateUser({
       password: newPassword
     })
     if (error) throw error
