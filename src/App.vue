@@ -50,15 +50,17 @@ async function initSession(retries = MAX_RETRIES) {
       return true
     } catch (e) {
       const isTimeout = e?.message === 'timeout'
+      // 超时时强制结束 loading 状态，防止路由守卫再次挂起
+      if (isTimeout) auth.loading = false
       console.warn(`[App] 初始化失败 (第${attempt}次):`, e?.message)
       if (attempt < retries) {
         await new Promise(r => setTimeout(r, 1000 * attempt))
         continue
       }
-      // 所有重试用尽，只在用户可见时显示错误
-      if (!isTimeout || attempt >= retries) {
-        initError.value = '应用初始化失败，请检查网络连接后重试'
-      }
+      // 所有重试用尽，强制结束 loading 状态防止路由守卫挂起，并显示错误
+      auth.loading = false
+      initError.value = '应用初始化失败，请检查网络连接后重试'
+      return false
     }
   }
   return false

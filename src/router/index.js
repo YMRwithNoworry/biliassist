@@ -48,7 +48,12 @@ router.beforeEach(async (to, from, next) => {
 
   if (auth.loading) {
     try {
-      await auth.getSession()
+      await Promise.race([
+        auth.getSession(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 8000)
+        )
+      ])
     } catch {
       auth.loading = false
     }
