@@ -280,6 +280,7 @@ const toggleAutostart = async () => {
   } catch (e) {
     console.error('设置开机自启失败:', e)
     autostartEnabled.value = !autostartEnabled.value
+    alert(typeof e === 'string' ? e : '设置开机自启失败')
   }
 }
 

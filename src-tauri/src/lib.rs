@@ -60,6 +60,22 @@ async fn manual_reply_video_comments() -> Result<String, String> {
 //  开机自启
 // ============================================================
 
+/// 检测是否在开发模式下运行（非正式构建）
+/// 开发模式下启用自启动会导致开机时连接 localhost 失败
+fn is_dev_mode() -> bool {
+    if std::env::var("TAURI_ENV_TAURI_DEV").is_ok() {
+        return true;
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let target_dir = std::path::Path::new(manifest_dir).join("target");
+        if exe.starts_with(&target_dir) {
+            return true;
+        }
+    }
+    false
+}
+
 #[tauri::command]
 async fn get_autostart_status(app: tauri::AppHandle) -> Result<bool, String> {
     use tauri_plugin_autostart::ManagerExt;
@@ -69,6 +85,9 @@ async fn get_autostart_status(app: tauri::AppHandle) -> Result<bool, String> {
 #[tauri::command]
 async fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     use tauri_plugin_autostart::ManagerExt;
+    if enabled && is_dev_mode() {
+        return Err("开发模式下无法启用开机自启，请先打包为正式版再使用此功能".into());
+    }
     if enabled {
         app.autolaunch().enable().map_err(|e| e.to_string())
     } else {
@@ -115,8 +134,13 @@ pub fn run() {
 
             // 检测是否由开机自启启动
             let is_autostart = std::env::args().any(|a| a == "--from-autostart");
+            let is_dev = is_dev_mode();
             if is_autostart {
-                log::info!("应用由开机自启启动，将隐藏到系统托盘运行");
+                if is_dev {
+                    log::warn!("开发模式下由开机自启启动，前端无法加载，将显示窗口并自动禁用自启");
+                } else {
+                    log::info!("应用由开机自启启动，将隐藏到系统托盘运行");
+                }
             }
 
             // 初始化存储目录和自动回复
@@ -128,8 +152,19 @@ pub fn run() {
                 });
             });
 
+            // 清理开发模式下的无效自启动注册
+            if is_autostart && is_dev {
+                use tauri_plugin_autostart::ManagerExt;
+                if let Err(e) = app.autolaunch().disable() {
+                    log::error!("清理开发模式自启注册失败: {}", e);
+                } else {
+                    log::info!("已自动禁用开发模式下的开机自启");
+                }
+            }
+
             // 开机自启时先隐藏窗口，等用户点击托盘再显示
-            if is_autostart {
+            // 开发模式下不隐藏，因为前端依赖 Vite 开发服务器，隐藏后用户无法排查问题
+            if is_autostart && !is_dev {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.hide();
                 }
