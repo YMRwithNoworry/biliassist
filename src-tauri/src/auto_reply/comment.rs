@@ -361,32 +361,64 @@ impl CommentHandler {
             return Err("未找到 CSRF token".into());
         }
 
-        let resp = get_http_client()
-            .post("https://api.bilibili.com/x/v2/reply/like")
-            .header("Cookie", &account.cookie)
-            .header("Referer", format!("https://www.bilibili.com/video/av{}", aid))
-            .header("Origin", "https://www.bilibili.com")
-            .header("Accept", ACCEPT_JSON)
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .form(&[
-                ("type", "1"),
-                ("oid", &aid.to_string()),
-                ("rpid", &rpid.to_string()),
-                ("action", "1"),
-                ("csrf", &csrf),
-                ("csrf_token", &csrf),
-            ])
-            .send()
-            .await
-            .map_err(|e| format!("请求失败: {}", e))?;
+        let cookie = account.cookie.clone();
 
-        let json = resp_to_json(resp).await?;
+        let try_like = |delay: u64| {
+            let csrf = csrf.clone();
+            let cookie = cookie.clone();
+            async move {
+            if delay > 0 {
+                tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
+            }
+            let resp = get_http_client()
+                .post("https://api.bilibili.com/x/v2/reply/like")
+                .header("Cookie", &cookie)
+                .header("Referer", format!("https://www.bilibili.com/video/av{}", aid))
+                .header("Origin", "https://www.bilibili.com")
+                .header("Accept", ACCEPT_JSON)
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .form(&[
+                    ("type", "1"),
+                    ("oid", &aid.to_string()),
+                    ("rpid", &rpid.to_string()),
+                    ("action", "1"),
+                    ("csrf", &csrf),
+                    ("csrf_token", &csrf),
+                ])
+                .send()
+                .await
+                .map_err(|e| format!("请求失败: {}", e))?;
+            let text = resp.text().await.map_err(|e| format!("读取响应失败: {}", e))?;
+            if text.trim_start().starts_with("<!DOCTYPE") || text.trim_start().starts_with("<html") {
+                return Err("HTML_RESPONSE".to_string());
+            }
+            let json: serde_json::Value = serde_json::from_str(&text)
+                .map_err(|e| format!("解析JSON失败: {} | body={}", e, &text[..text.len().min(200)]))?;
+            if json["code"] != 0 {
+                let msg = json["message"].as_str().unwrap_or("未知");
+                return Err(format!("点赞失败: {}", msg));
+            }
+            Ok(())
+        }
+        };
 
-        if json["code"] != 0 {
-            let msg = json["message"].as_str().unwrap_or("未知");
-            log::warn!("点赞评论 rpid={} 失败: {}", rpid, msg);
-            return Err(format!("点赞失败: {}", msg));
+        let mut result = try_like(0).await;
+        if let Err(ref e) = result {
+            if e == "HTML_RESPONSE" {
+                log::warn!("点赞API收到限流HTML，等待3秒重试 (aid={}, rpid={})", aid, rpid);
+                result = try_like(3000).await;
+                if let Err(ref e2) = result {
+                    if e2 == "HTML_RESPONSE" {
+                        return Err("B站限流返回HTML".to_string());
+                    }
+                }
+            }
+        }
+
+        if let Err(ref e) = result {
+            log::warn!("点赞评论 rpid={} 失败: {}", rpid, e);
+            return result;
         }
         log::info!("已点赞评论 rpid={}", rpid);
         Ok(())
