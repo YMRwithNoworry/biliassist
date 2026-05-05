@@ -123,6 +123,17 @@
           </label>
         </div>
 
+        <div class="setting-row" style="margin-top: 20px;">
+          <div class="setting-info">
+            <div class="setting-title">自动点赞评论</div>
+            <div class="setting-desc">回复评论后自动为该评论点赞</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" v-model="likeComments" @change="save" />
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+
         <div class="form-field" style="margin-top: 20px;">
           <label class="field-label">回复间隔（秒）</label>
           <input
@@ -200,6 +211,7 @@ const enabled = ref(true)
 const message = ref('感谢您的留言！我会尽快回复。')
 const interval = ref(60)
 const replyOnlyOnce = ref(true)
+const likeComments = ref(false)
 const sources = ref(['comment', 'directMessage', 'follow'])
 const history = ref([])
 const autostartEnabled = ref(false)
@@ -226,6 +238,7 @@ const load = async () => {
     message.value = s.message
     interval.value = s.interval
     replyOnlyOnce.value = s.replyOnlyOnce
+    likeComments.value = s.likeComments ?? false
     sources.value = s.sources || ['comment', 'directMessage', 'follow']
     history.value = s.history || []
   } catch (e) {
@@ -246,6 +259,7 @@ const save = async () => {
         message: message.value,
         interval: interval.value,
         replyOnlyOnce: replyOnlyOnce.value,
+        likeComments: likeComments.value,
         sources: sources.value,
         history: history.value || [],
       }

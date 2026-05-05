@@ -1,6 +1,7 @@
 use super::handler::{MessageHandler, Message};
 use super::http::{get_http_client, resp_to_json, extract_csrf};
 use super::models::MsgSource;
+use super::state::AutoReplyState;
 use super::wbi;
 use crate::bilibili::UserInfo;
 use async_trait::async_trait;
@@ -353,6 +354,43 @@ impl CommentHandler {
         }
         Ok(())
     }
+
+    async fn like_comment(&self, account: &UserInfo, aid: u64, rpid: u64) -> Result<(), String> {
+        let csrf = extract_csrf(&account.cookie);
+        if csrf.is_empty() {
+            return Err("未找到 CSRF token".into());
+        }
+
+        let resp = get_http_client()
+            .post("https://api.bilibili.com/x/v2/reply/like")
+            .header("Cookie", &account.cookie)
+            .header("Referer", format!("https://www.bilibili.com/video/av{}", aid))
+            .header("Origin", "https://www.bilibili.com")
+            .header("Accept", ACCEPT_JSON)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .form(&[
+                ("type", "1"),
+                ("oid", &aid.to_string()),
+                ("rpid", &rpid.to_string()),
+                ("action", "1"),
+                ("csrf", &csrf),
+                ("csrf_token", &csrf),
+            ])
+            .send()
+            .await
+            .map_err(|e| format!("请求失败: {}", e))?;
+
+        let json = resp_to_json(resp).await?;
+
+        if json["code"] != 0 {
+            let msg = json["message"].as_str().unwrap_or("未知");
+            log::warn!("点赞评论 rpid={} 失败: {}", rpid, msg);
+            return Err(format!("点赞失败: {}", msg));
+        }
+        log::info!("已点赞评论 rpid={}", rpid);
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -405,5 +443,23 @@ impl MessageHandler for CommentHandler {
         let aid = message.extra_data["aid"].as_u64().ok_or("缺少aid")?;
         let rpid = message.extra_data["rpid"].as_u64().ok_or("缺少rpid")?;
         self.reply_to_comment(account, aid, rpid, reply_msg).await
+    }
+
+    async fn on_reply_success(&self, account: &UserInfo, message: &Message, state: &AutoReplyState) {
+        let settings = state.get_settings().await;
+        if !settings.like_comments {
+            return;
+        }
+        let aid = match message.extra_data["aid"].as_u64() {
+            Some(v) => v,
+            None => return,
+        };
+        let rpid = match message.extra_data["rpid"].as_u64() {
+            Some(v) => v,
+            None => return,
+        };
+        if let Err(e) = self.like_comment(account, aid, rpid).await {
+            log::warn!("自动点赞失败 (aid={}, rpid={}): {}", aid, rpid, e);
+        }
     }
 }

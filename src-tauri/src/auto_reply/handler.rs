@@ -33,6 +33,8 @@ pub trait MessageHandler: Send + Sync {
 
     async fn send_reply(&self, account: &UserInfo, message: &Message, reply_msg: &str) -> Result<(), String>;
 
+    async fn on_reply_success(&self, _account: &UserInfo, _message: &Message, _state: &AutoReplyState) {}
+
     fn needs_history_fallback(&self) -> bool {
         matches!(self.source_type(), MsgSource::DirectMessage | MsgSource::Follow)
     }
@@ -69,6 +71,8 @@ pub trait MessageHandler: Send + Sync {
                     }
                     state.add_history(message.user_name.clone(), formatted, self.source_type()).await;
                     result.success_count += 1;
+
+                    self.on_reply_success(account, &message, state).await;
                 }
                 Err(e) => {
                     log::error!("{}回复失败: {}", self.name(), e);

@@ -45,6 +45,8 @@ pub struct AutoReplySettings {
     pub sources: Vec<MsgSource>,
     #[serde(default)]
     pub history: Vec<ReplyHistory>,
+    #[serde(default)]
+    pub like_comments: bool,
 }
 
 impl AutoReplySettings {
@@ -56,6 +58,7 @@ impl AutoReplySettings {
             reply_only_once: true,
             sources: vec![MsgSource::Comment, MsgSource::DirectMessage, MsgSource::Follow],
             history: Vec::new(),
+            like_comments: false,
         }
     }
 
