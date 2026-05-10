@@ -11,6 +11,11 @@ const router = createRouter({
       component: () => import('../views/AuthPage.vue')
     },
     {
+      path: '/payment',
+      name: 'payment',
+      component: () => import('../views/PaymentPage.vue')
+    },
+    {
       path: '/',
       name: 'home',
       component: HomeView,
@@ -59,19 +64,33 @@ router.beforeEach(async (to, from, next) => {
     }
   }
 
+  // Auth guard
   if (to.name === 'auth') {
     if (auth.isAuthenticated) {
       next({ name: 'home' })
     } else {
       next()
     }
-  } else {
-    if (!auth.isAuthenticated) {
-      next({ name: 'auth' })
-    } else {
-      next()
+    return
+  }
+
+  if (!auth.isAuthenticated) {
+    next({ name: 'auth' })
+    return
+  }
+
+  // Tier guard: only Plus users can use the app
+  if (to.name !== 'payment') {
+    if (!auth.tierChecked) {
+      await auth.checkTier()
+    }
+    if (!auth.isPlus) {
+      next({ name: 'payment' })
+      return
     }
   }
+
+  next()
 })
 
 export default router

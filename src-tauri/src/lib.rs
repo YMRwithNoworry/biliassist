@@ -5,10 +5,21 @@ mod auto_reply;
 use tauri::Manager;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use base64::{Engine, engine::general_purpose};
 
 #[tauri::command]
 async fn get_qr_code() -> Result<bilibili::QrCodeResponse, String> {
     bilibili::get_qr_code().await
+}
+
+#[tauri::command]
+async fn generate_qr_code(data: String) -> Result<String, String> {
+    let code = qrcode::QrCode::new(data).map_err(|e| format!("生成二维码失败: {}", e))?;
+    let image = code.render::<image::Luma<u8>>().build();
+    let mut buffer = Vec::new();
+    image.write_to(&mut std::io::Cursor::new(&mut buffer), image::ImageFormat::Png)
+        .map_err(|e| format!("编码PNG失败: {}", e))?;
+    Ok(general_purpose::STANDARD.encode(&buffer))
 }
 
 #[tauri::command]
@@ -117,6 +128,7 @@ pub fn run() {
         )
         .invoke_handler(tauri::generate_handler![
             get_qr_code,
+            generate_qr_code,
             check_login_status,
             get_accounts,
             sync_accounts,
