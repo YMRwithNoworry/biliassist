@@ -15,6 +15,20 @@
 
     <!-- Main Content -->
     <main class="page-main">
+      <!-- Basic User Lock -->
+      <div v-if="!auth.isPlus" class="lock-card">
+        <div class="lock-icon">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#F0883E" stroke-width="1.5">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </div>
+        <h2 class="lock-title">需要 Plus 等级</h2>
+        <p class="lock-desc">自动回复功能仅限 Plus 用户使用，请输入激活密钥升级</p>
+        <button class="lock-btn" @click="goBack">返回首页输入密钥</button>
+      </div>
+
+      <template v-else>
       <!-- Enable Toggle -->
       <div class="card">
         <div class="setting-row">
@@ -196,6 +210,7 @@
           </div>
         </div>
       </div>
+      </template>
     </main>
   </div>
 </template>
@@ -204,8 +219,10 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { invoke } from '@tauri-apps/api/core'
+import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
+const auth = useAuthStore()
 
 const enabled = ref(true)
 const message = ref('感谢您的留言！我会尽快回复。')
@@ -373,6 +390,64 @@ onMounted(() => load())
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* Lock Card */
+.lock-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 64px 32px;
+  background-color: #161B22;
+  border: 1px solid #30363D;
+  border-radius: 12px;
+  gap: 16px;
+}
+
+.lock-icon {
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(248, 129, 62, 0.1);
+  border-radius: 50%;
+  margin-bottom: 8px;
+}
+
+.lock-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #E6EDF3;
+  margin: 0;
+}
+
+.lock-desc {
+  font-size: 14px;
+  color: #8B949E;
+  margin: 0;
+  max-width: 320px;
+  line-height: 1.5;
+}
+
+.lock-btn {
+  padding: 10px 24px;
+  background-color: #F0883E;
+  border: none;
+  border-radius: 6px;
+  color: #FFFFFF;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  margin-top: 8px;
+}
+
+.lock-btn:hover {
+  background-color: #F29D5C;
 }
 
 /* Cards */

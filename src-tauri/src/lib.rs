@@ -23,6 +23,14 @@ async fn generate_qr_code(data: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn verify_license(license_key: String) -> Result<String, String> {
+    if license_key != "431paojiao" {
+        return Err("密钥错误".into());
+    }
+    Ok("ok".into())
+}
+
+#[tauri::command]
 async fn check_login_status() -> Result<bilibili::LoginStatus, String> {
     bilibili::check_login_status().await
 }
@@ -129,6 +137,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_qr_code,
             generate_qr_code,
+            verify_license,
             check_login_status,
             get_accounts,
             sync_accounts,

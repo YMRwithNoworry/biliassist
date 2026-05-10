@@ -1,5 +1,0 @@
-{
-  "name": "bam-pay",
-  "compatibility_date": "2026-05-10",
-  "main": "server/wechat-pay-worker.js"
-}

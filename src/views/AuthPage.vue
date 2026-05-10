@@ -10,7 +10,7 @@
           </svg>
         </div>
         <h1 class="auth-title">BilibiliAccountManager</h1>
-        <p class="auth-subtitle">登录后免费注册，支付 6 元升级 Plus 可使用全部功能</p>
+        <p class="auth-subtitle">登录后可使用全部功能</p>
       </div>
 
       <!-- Auth Card -->

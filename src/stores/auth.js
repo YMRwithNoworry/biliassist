@@ -1,15 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { supabase } from '../lib/supabase'
-import { PAYMENT_WORKER_URL } from '../lib/config'
 
 function requireSupabase() {
   if (!supabase) throw new Error('Supabase 未配置，请检查 .env 文件')
   return supabase
-}
-
-function isPaymentConfigured() {
-  return PAYMENT_WORKER_URL && PAYMENT_WORKER_URL !== 'http://localhost:8787'
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -38,14 +33,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function checkTier() {
-    // 支付服务未部署时默认放行
-    if (!isPaymentConfigured()) {
-      userTier.value = 'plus'
-      tierChecked.value = true
-      return
-    }
     if (!supabase || !user.value?.id) {
-      userTier.value = 'plus'
+      userTier.value = 'basic'
       tierChecked.value = true
       return
     }
