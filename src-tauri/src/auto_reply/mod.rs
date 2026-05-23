@@ -6,13 +6,14 @@ pub mod handler;
 pub mod comment;
 pub mod direct_message;
 pub mod follow;
+pub mod ai;
 
-pub use models::{AutoReplySettings, MsgSource};
+pub use models::{AutoReplySettings, MsgSource, AiReplyConfig};
 pub use state::get_global_state;
 
 use handler::HandlerRegistry;
 
-/// è‡ªåŠ¨å›žå¤æœåŠ¡
+/// ×Ô¶¯»Ø¸´·þÎñ
 pub struct AutoReplyService {
     registry: HandlerRegistry,
 }
@@ -27,7 +28,7 @@ impl AutoReplyService {
     }
 
     pub async fn start(&self) {
-        log::info!("è‡ªåŠ¨å›žå¤æœåŠ¡å¯åŠ¨");
+        log::info!("×Ô¶¯»Ø¸´·þÎñÆô¶¯");
 
         loop {
             let state = get_global_state();
@@ -43,7 +44,7 @@ impl AutoReplyService {
                     let account = match crate::storage::get_active_account().await {
                         Some(acc) => acc,
                         None => {
-                            log::warn!("æ²¡æœ‰æ¿€æ´»çš„è´¦å·");
+                            log::warn!("Ã»ÓÐ¼¤»îµÄÕËºÅ");
                             continue;
                         }
                     };
@@ -52,12 +53,12 @@ impl AutoReplyService {
                     let has_bili_jct = account.cookie.contains("bili_jct=");
                     let has_dede = account.cookie.contains("DedeUserID=");
                     log::info!(
-                        "è´¦å· cookie è¯Šæ–­: len={}, SESSDATA={}, bili_jct={}, DedeUserID={}",
+                        "ÕËºÅ cookie Õï¶Ï: len={}, SESSDATA={}, bili_jct={}, DedeUserID={}",
                         account.cookie.len(), has_sessdata, has_bili_jct, has_dede
                     );
 
                     if !has_sessdata || !has_bili_jct {
-                        log::error!("cookie ä¸å®Œæ•´ï¼ˆç¼ºå°‘ SESSDATA æˆ– bili_jctï¼‰ï¼Œè¯·åˆ é™¤è´¦å·é‡æ–°æ‰«ç ç™»å½•");
+                        log::error!("cookie ²»ÍêÕû£¨È±ÉÙ SESSDATA »ò bili_jct£©£¬ÇëÉ¾³ýÕËºÅÖØÐÂÉ¨ÂëµÇÂ¼");
                         continue;
                     }
 
@@ -65,18 +66,18 @@ impl AutoReplyService {
                         Ok(result) => {
                             if result.success_count > 0 || result.error_count > 0 {
                                 log::info!(
-                                    "{} å¤„ç†å®Œæˆ: æˆåŠŸ={}, å¤±è´¥={}",
+                                    "{} ´¦ÀíÍê³É: ³É¹¦={}, Ê§°Ü={}",
                                     handler.name(),
                                     result.success_count,
                                     result.error_count
                                 );
                             }
                             if result.stopped_by_rate_limit {
-                                log::warn!("{} è§¦å‘é£ŽæŽ§é™åˆ¶ï¼Œåœæ­¢å¤„ç†", handler.name());
+                                log::warn!("{} ´¥·¢·ç¿ØÏÞÖÆ£¬Í£Ö¹´¦Àí", handler.name());
                             }
                         }
                         Err(e) => {
-                            log::error!("{} å¤„ç†å¤±è´¥: {}", handler.name(), e);
+                            log::error!("{} ´¦ÀíÊ§°Ü: {}", handler.name(), e);
                         }
                     }
                 }
@@ -95,7 +96,7 @@ impl AutoReplyService {
         let settings = state.get_settings().await;
         let account = crate::storage::get_active_account()
             .await
-            .ok_or("æ²¡æœ‰æ¿€æ´»çš„è´¦å·")?;
+            .ok_or("Ã»ÓÐ¼¤»îµÄÕËºÅ")?;
 
         let sources = if let Some(s) = source {
             vec![s]
@@ -110,14 +111,14 @@ impl AutoReplyService {
                 match handler.handle(&account, state).await {
                     Ok(result) => {
                         results.push(format!(
-                            "{}: æˆåŠŸ{}æ¡, å¤±è´¥{}æ¡",
+                            "{}: ³É¹¦{}Ìõ Ê§°Ü{}Ìõ",
                             handler.name(),
                             result.success_count,
                             result.error_count
                         ));
                     }
                     Err(e) => {
-                        results.push(format!("{}: å¤±è´¥ - {}", handler.name(), e));
+                        results.push(format!("{}: Ê§°Ü - {}", handler.name(), e));
                     }
                 }
             }
@@ -134,7 +135,7 @@ impl Default for AutoReplyService {
 }
 
 // ============================================================
-//  å‘åŽå…¼å®¹çš„å…¬å¼€ API å‡½æ•°
+//  Ïòºó¼æÈÝµÄ¹«¿ª API º¯Êý
 // ============================================================
 
 pub async fn init_settings() {
@@ -155,8 +156,14 @@ pub async fn save_settings(new_settings: AutoReplySettings) -> Result<(), String
 pub async fn test_reply() -> Result<String, String> {
     let state = get_global_state();
     let settings = state.get_settings().await;
-    let formatted = handler::format_message(&settings.message, "æµ‹è¯•ç”¨æˆ·");
-    Ok(format!("æµ‹è¯•å›žå¤å†…å®¹:\n{}", formatted))
+    let formatted = handler::format_message(&settings.message, "²âÊÔÓÃ»§");
+    Ok(format!("²âÊÔ»Ø¸´ÄÚÈÝ:\n{}", formatted))
+}
+
+pub async fn test_ai_reply() -> Result<String, String> {
+    let state = get_global_state();
+    let settings = state.get_settings().await;
+    ai::test_ai_config(&settings.ai).await
 }
 
 pub async fn manual_reply_comments() -> Result<String, String> {

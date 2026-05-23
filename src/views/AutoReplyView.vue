@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="auto-reply-page">
     <!-- Header -->
     <header class="page-header">
@@ -57,6 +57,143 @@
         </div>
       </div>
 
+      <!-- ==================== AI Reply Config ==================== -->
+      <div class="card ai-card">
+        <div class="card-header">
+          <h2 class="card-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 6px;">
+              <path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.57-3.25 3.92L12 22"/>
+              <path d="M12 2a4 4 0 0 0-4 4c0 1.95 1.4 3.57 3.25 3.92"/>
+              <path d="M4 13h16"/>
+              <path d="M6 9l-2 4"/>
+              <path d="M18 9l2 4"/>
+            </svg>
+            AI 智能回复
+          </h2>
+          <span class="ai-badge" :class="{ active: aiEnabled }">{{ aiEnabled ? '已启用' : '未启用' }}</span>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-title">启用 AI 生成</div>
+            <div class="setting-desc">使用 AI 根据消息内容生成个性化回复（不使用则按固定模板回复）</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" v-model="aiEnabled" @change="save" />
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+
+        <div v-show="aiEnabled" class="ai-config">
+
+          <!-- ===== 系统提示词 ===== -->
+          <div class="prompt-section">
+            <div class="prompt-section-header">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+                <polyline points="10 9 9 9 8 9"/>
+              </svg>
+              <span>系统提示词</span>
+              <span class="prompt-tag">设定 AI 角色</span>
+            </div>
+            <textarea
+              v-model="aiSystemPrompt"
+              class="textarea prompt-textarea"
+              rows="3"
+              placeholder="你是一个友善的B站UP主助手，负责回复粉丝的评论和私信……"
+              @blur="save"
+            ></textarea>
+            <div class="field-hint">定义 AI 的身份、语气和回复风格。留空则使用默认值。</div>
+          </div>
+
+          <!-- ===== 回复提示词模板 ===== -->
+          <div class="prompt-section prompt-section-primary">
+            <div class="prompt-section-header">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              </svg>
+              <span>回复提示词模板</span>
+              <span class="prompt-tag highlight">每次回复都会调用</span>
+            </div>
+            <textarea
+              v-model="aiPromptTemplate"
+              class="textarea prompt-textarea"
+              rows="4"
+              placeholder="用户「{用户名}」通过{来源}给你发了一条消息：「{消息内容}&#10;请生成一条合适的回复。"
+              @blur="save"
+            ></textarea>
+            <div class="field-hint">
+              每次 AI 生成回复时，都会使用此模板并将变量替换为实际内容后发送给 AI。
+            </div>
+            <div class="template-vars">
+              <span class="var-label">可用变量：</span>
+              <button class="var-chip" @click="insertVar('用户名')" title="点击插入">{用户名}</button>
+              <button class="var-chip" @click="insertVar('消息内容')" title="点击插入">{消息内容}</button>
+              <button class="var-chip" @click="insertVar('来源')" title="点击插入">{来源}</button>
+            </div>
+          </div>
+
+          <!-- ===== API 配置 ===== -->
+          <div class="form-field">
+            <label class="field-label">API Base URL</label>
+            <input
+              type="text"
+              v-model="aiBaseUrl"
+              class="input"
+              placeholder="https://api.openai.com/v1"
+              @blur="save"
+            />
+            <div class="field-hint">兼容 OpenAI 接口的服务地址，如 OpenAI、DeepSeek、Ollama 等</div>
+          </div>
+
+          <div class="form-field">
+            <label class="field-label">模型名称</label>
+            <input
+              type="text"
+              v-model="aiModel"
+              class="input"
+              placeholder="gpt-4o-mini"
+              @blur="save"
+            />
+            <div class="field-hint">例如 gpt-4o-mini、deepseek-chat、qwen-turbo 等</div>
+          </div>
+
+          <div class="form-field">
+            <label class="field-label">API Key</label>
+            <div class="input-with-toggle">
+              <input
+                :type="showApiKey ? 'text' : 'password'"
+                v-model="aiApiKey"
+                class="input"
+                placeholder="sk-..."
+                @blur="save"
+              />
+              <button class="btn-toggle-key" @click="showApiKey = !showApiKey" type="button">
+                <svg v-if="!showApiKey" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                </svg>
+                <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <button class="btn btn-secondary btn-block" @click="testAiReply" :disabled="aiTesting">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+            {{ aiTesting ? '测试中...' : '测试 AI 回复' }}
+          </button>
+          <div v-if="aiTestResult" class="ai-test-result" :class="{ error: aiTestError }">
+            {{ aiTestResult }}
+          </div>
+        </div>
+      </div>
+
       <!-- Sources -->
       <div class="card">
         <div class="card-header">
@@ -96,10 +233,10 @@
         </div>
       </div>
 
-      <!-- Message Content -->
+      <!-- Message Content (fallback template) -->
       <div class="card">
         <div class="card-header">
-          <h2 class="card-title">回复内容</h2>
+          <h2 class="card-title">回复内容{{ aiEnabled ? '（AI 未启用时使用）' : '' }}</h2>
         </div>
         <div class="form-field">
           <textarea
@@ -233,6 +370,18 @@ const sources = ref(['comment', 'directMessage', 'follow'])
 const history = ref([])
 const autostartEnabled = ref(false)
 
+// AI 配置
+const aiEnabled = ref(false)
+const aiBaseUrl = ref('https://api.openai.com/v1')
+const aiModel = ref('gpt-4o-mini')
+const aiApiKey = ref('')
+const aiSystemPrompt = ref('')
+const aiPromptTemplate = ref('')
+const showApiKey = ref(false)
+const aiTesting = ref(false)
+const aiTestResult = ref('')
+const aiTestError = ref(false)
+
 const sourceLabel = (s) => {
   const map = { comment: '评论', directMessage: '私信', follow: '关注' }
   return map[s] || s
@@ -248,6 +397,13 @@ const toggleSource = (src) => {
   save()
 }
 
+/** 在光标位置插入变量到回复提示词模板 */
+const insertVar = (varName) => {
+  const tag = `{${varName}}`
+  aiPromptTemplate.value += tag
+  save()
+}
+
 const load = async () => {
   try {
     const s = await invoke('get_auto_reply_settings')
@@ -258,6 +414,15 @@ const load = async () => {
     likeComments.value = s.likeComments ?? false
     sources.value = s.sources || ['comment', 'directMessage', 'follow']
     history.value = s.history || []
+    // 加载 AI 配置
+    if (s.ai) {
+      aiEnabled.value = s.ai.enabled ?? false
+      aiBaseUrl.value = s.ai.baseUrl || 'https://api.openai.com/v1'
+      aiModel.value = s.ai.model || 'gpt-4o-mini'
+      aiApiKey.value = s.ai.apiKey || ''
+      aiSystemPrompt.value = s.ai.systemPrompt || ''
+      aiPromptTemplate.value = s.ai.promptTemplate || ''
+    }
   } catch (e) {
     console.error('加载设置失败:', e)
   }
@@ -279,6 +444,14 @@ const save = async () => {
         likeComments: likeComments.value,
         sources: sources.value,
         history: history.value || [],
+        ai: {
+          enabled: aiEnabled.value,
+          baseUrl: aiBaseUrl.value,
+          model: aiModel.value,
+          apiKey: aiApiKey.value,
+          systemPrompt: aiSystemPrompt.value,
+          promptTemplate: aiPromptTemplate.value,
+        }
       }
     })
   } catch (e) {
@@ -292,6 +465,22 @@ const testReply = async () => {
     alert(result)
   } catch (e) {
     console.error('测试失败:', e)
+  }
+}
+
+const testAiReply = async () => {
+  aiTesting.value = true
+  aiTestResult.value = ''
+  aiTestError.value = false
+  try {
+    const result = await invoke('test_ai_reply')
+    aiTestResult.value = result
+    aiTestError.value = false
+  } catch (e) {
+    aiTestResult.value = typeof e === 'string' ? e : '测试失败，请检查配置'
+    aiTestError.value = true
+  } finally {
+    aiTesting.value = false
   }
 }
 
@@ -392,81 +581,23 @@ onMounted(() => load())
   gap: 16px;
 }
 
-/* Lock Card */
-.lock-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 64px 32px;
-  background-color: #161B22;
-  border: 1px solid #30363D;
-  border-radius: 12px;
-  gap: 16px;
-}
-
-.lock-icon {
-  width: 72px;
-  height: 72px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: rgba(248, 129, 62, 0.1);
-  border-radius: 50%;
-  margin-bottom: 8px;
-}
-
-.lock-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: #E6EDF3;
-  margin: 0;
-}
-
-.lock-desc {
-  font-size: 14px;
-  color: #8B949E;
-  margin: 0;
-  max-width: 320px;
-  line-height: 1.5;
-}
-
-.lock-btn {
-  padding: 10px 24px;
-  background-color: #F0883E;
-  border: none;
-  border-radius: 6px;
-  color: #FFFFFF;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  font-family: inherit;
-  margin-top: 8px;
-}
-
-.lock-btn:hover {
-  background-color: #F29D5C;
-}
-
 /* Cards */
 .card {
   background-color: #161B22;
   border: 1px solid #30363D;
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 20px;
 }
 
 .card-header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
   margin-bottom: 16px;
 }
 
 .card-title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   color: #E6EDF3;
   margin: 0;
@@ -475,10 +606,52 @@ onMounted(() => load())
 .badge {
   padding: 2px 8px;
   background-color: #388BFD1A;
+  color: #2F81F7;
   border-radius: 12px;
   font-size: 12px;
   font-weight: 500;
-  color: #2F81F7;
+}
+
+/* Lock Card */
+.lock-card {
+  background-color: #161B22;
+  border: 1px solid #30363D;
+  border-radius: 8px;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.lock-icon {
+  margin-bottom: 20px;
+}
+
+.lock-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #E6EDF3;
+  margin: 0 0 12px;
+}
+
+.lock-desc {
+  font-size: 14px;
+  color: #8B949E;
+  margin: 0 0 24px;
+}
+
+.lock-btn {
+  padding: 10px 24px;
+  background-color: #238636;
+  border: 1px solid rgba(46, 160, 67, 0.4);
+  border-radius: 6px;
+  color: #FFFFFF;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lock-btn:hover {
+  background-color: #2EA043;
 }
 
 /* Setting Row */
@@ -602,6 +775,7 @@ onMounted(() => load())
   gap: 6px;
   font-size: 12px;
   color: #8B949E;
+  line-height: 1.4;
 }
 
 /* Input */
@@ -625,6 +799,36 @@ onMounted(() => load())
 
 .input::placeholder {
   color: #6E7681;
+}
+
+/* Input with toggle button */
+.input-with-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.input-with-toggle .input {
+  flex: 1;
+}
+
+.btn-toggle-key {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #21262D;
+  border: 1px solid #30363D;
+  border-radius: 6px;
+  color: #8B949E;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.btn-toggle-key:hover {
+  background-color: #30363D;
+  color: #E6EDF3;
 }
 
 /* Textarea */
@@ -697,6 +901,131 @@ onMounted(() => load())
 
 .btn-block {
   width: 100%;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ========== AI Card ========== */
+.ai-card {
+  border-color: #1F3A5F;
+  background: linear-gradient(135deg, #161B22 0%, #0D1117 100%);
+}
+
+.ai-badge {
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  background-color: #30363D;
+  color: #8B949E;
+}
+
+.ai-badge.active {
+  background-color: #3FB9501A;
+  color: #3FB950;
+}
+
+.ai-config {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #21262D;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Prompt Sections */
+.prompt-section {
+  background-color: #0D1117;
+  border: 1px solid #21262D;
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.prompt-section-primary {
+  border-color: #1F6FEB44;
+  background: linear-gradient(135deg, #0D1117 0%, #0C1524 100%);
+}
+
+.prompt-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #E6EDF3;
+}
+
+.prompt-tag {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 500;
+  background-color: #30363D;
+  color: #8B949E;
+}
+
+.prompt-tag.highlight {
+  background-color: #388BFD22;
+  color: #58A6FF;
+}
+
+.prompt-textarea {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* Template Variables */
+.template-vars {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.var-label {
+  font-size: 12px;
+  color: #8B949E;
+}
+
+.var-chip {
+  padding: 4px 10px;
+  background-color: #21262D;
+  border: 1px solid #30363D;
+  border-radius: 12px;
+  font-size: 12px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #79C0FF;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.var-chip:hover {
+  background-color: #388BFD1A;
+  border-color: #2F81F7;
+  color: #A5D6FF;
+}
+
+.ai-test-result {
+  margin-top: 8px;
+  padding: 12px 14px;
+  background-color: #0D1117;
+  border: 1px solid #238636;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #3FB950;
+  line-height: 1.5;
+}
+
+.ai-test-result.error {
+  border-color: #DA3633;
+  color: #F85149;
 }
 
 /* Empty State */

@@ -1,4 +1,4 @@
-use chrono::{FixedOffset, TimeZone};
+﻿use chrono::{FixedOffset, TimeZone};
 use serde::{Deserialize, Serialize};
 
 pub(crate) fn beijing_now() -> chrono::DateTime<FixedOffset> {
@@ -35,6 +35,64 @@ impl MsgSource {
     }
 }
 
+/// AI 回复配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiReplyConfig {
+    /// 是否启用 AI 生成回复
+    #[serde(default)]
+    pub enabled: bool,
+    /// API Base URL（兼容 OpenAI 接口）
+    #[serde(default)]
+    pub base_url: String,
+    /// 模型名称
+    #[serde(default)]
+    pub model: String,
+    /// API Key
+    #[serde(default)]
+    pub api_key: String,
+    /// 系统提示词 —— 设定 AI 的角色与回复风格
+    #[serde(default)]
+    pub system_prompt: String,
+    /// 回复提示词模板 —— 每次生成回复时发送给 AI 的用户消息模板
+    /// 支持变量：{用户名}、{消息内容}、{来源}
+    #[serde(default)]
+    pub prompt_template: String,
+}
+
+impl Default for AiReplyConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            base_url: "https://api.openai.com/v1".to_string(),
+            model: "gpt-4o-mini".to_string(),
+            api_key: String::new(),
+            system_prompt: String::new(),
+            prompt_template: String::new(),
+        }
+    }
+}
+
+impl AiReplyConfig {
+    /// 获取系统提示词，若为空则返回默认值
+    pub fn effective_system_prompt(&self) -> String {
+        if self.system_prompt.trim().is_empty() {
+            "你是一个友善的B站UP主助手，负责回复粉丝的评论和私信。请根据对方的消息内容生成一条简短、友好、自然的回复。回复应该简洁（不超过50个字），语气亲切。".to_string()
+        } else {
+            self.system_prompt.clone()
+        }
+    }
+
+    /// 获取回复提示词模板，若为空则返回默认模板
+    pub fn effective_prompt_template(&self) -> String {
+        if self.prompt_template.trim().is_empty() {
+            "用户「{用户名}」通过{来源}给你发了一条消息：「{消息内容}」\n请生成一条合适的回复。".to_string()
+        } else {
+            self.prompt_template.clone()
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutoReplySettings {
@@ -47,6 +105,8 @@ pub struct AutoReplySettings {
     pub history: Vec<ReplyHistory>,
     #[serde(default)]
     pub like_comments: bool,
+    #[serde(default)]
+    pub ai: AiReplyConfig,
 }
 
 impl AutoReplySettings {
@@ -59,6 +119,7 @@ impl AutoReplySettings {
             sources: vec![MsgSource::Comment, MsgSource::DirectMessage, MsgSource::Follow],
             history: Vec::new(),
             like_comments: false,
+            ai: AiReplyConfig::default(),
         }
     }
 

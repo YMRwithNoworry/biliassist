@@ -14,18 +14,18 @@ async fn get_qr_code() -> Result<bilibili::QrCodeResponse, String> {
 
 #[tauri::command]
 async fn generate_qr_code(data: String) -> Result<String, String> {
-    let code = qrcode::QrCode::new(data).map_err(|e| format!("ç”ŸæˆäºŒç»´ç å¤±è´¥: {}", e))?;
+    let code = qrcode::QrCode::new(data).map_err(|e| format!("Éú³É¶şÎ¬ÂëÊ§°Ü: {}", e))?;
     let image = code.render::<image::Luma<u8>>().build();
     let mut buffer = Vec::new();
     image.write_to(&mut std::io::Cursor::new(&mut buffer), image::ImageFormat::Png)
-        .map_err(|e| format!("ç¼–ç PNGå¤±è´¥: {}", e))?;
+        .map_err(|e| format!("±àÂëPNGÊ§°Ü: {}", e))?;
     Ok(general_purpose::STANDARD.encode(&buffer))
 }
 
 #[tauri::command]
 async fn verify_license(license_key: String) -> Result<String, String> {
     if license_key != "431paojiao" {
-        return Err("å¯†é’¥é”™è¯¯".into());
+        return Err("ÃÜÔ¿´íÎó".into());
     }
     Ok("ok".into())
 }
@@ -71,16 +71,21 @@ async fn test_auto_reply() -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn test_ai_reply() -> Result<String, String> {
+    auto_reply::test_ai_reply().await
+}
+
+#[tauri::command]
 async fn manual_reply_video_comments() -> Result<String, String> {
     auto_reply::manual_reply_comments().await
 }
 
 // ============================================================
-//  å¼€æœºè‡ªå¯
+//  ¿ª»ú×ÔÆô
 // ============================================================
 
-/// æ£€æµ‹æ˜¯å¦åœ¨å¼€å‘æ¨¡å¼ä¸‹è¿è¡Œï¼ˆéæ­£å¼æ„å»ºï¼‰
-/// å¼€å‘æ¨¡å¼ä¸‹å¯ç”¨è‡ªå¯åŠ¨ä¼šå¯¼è‡´å¼€æœºæ—¶è¿æ¥ localhost å¤±è´¥
+/// ¼ì²âÊÇ·ñÔÚ¿ª·¢Ä£Ê½ÏÂÔËĞĞ£¨·ÇÕıÊ½¹¹½¨£©
+/// ¿ª·¢Ä£Ê½ÏÂÆôÓÃ×ÔÆô¶¯»áµ¼ÖÂ¿ª»úÊ±Á¬½Ó localhost Ê§°Ü
 fn is_dev_mode() -> bool {
     if std::env::var("TAURI_ENV_TAURI_DEV").is_ok() {
         return true;
@@ -105,7 +110,7 @@ async fn get_autostart_status(app: tauri::AppHandle) -> Result<bool, String> {
 async fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     use tauri_plugin_autostart::ManagerExt;
     if enabled && is_dev_mode() {
-        return Err("å¼€å‘æ¨¡å¼ä¸‹æ— æ³•å¯ç”¨å¼€æœºè‡ªå¯ï¼Œè¯·å…ˆæ‰“åŒ…ä¸ºæ­£å¼ç‰ˆå†ä½¿ç”¨æ­¤åŠŸèƒ½".into());
+        return Err("¿ª·¢Ä£Ê½ÏÂÎŞ·¨ÆôÓÃ¿ª»ú×ÔÆô£¬ÇëÏÈ´ò°üÎªÕıÊ½°æÔÙÊ¹ÓÃ´Ë¹¦ÄÜ".into());
     }
     if enabled {
         app.autolaunch().enable().map_err(|e| e.to_string())
@@ -114,7 +119,7 @@ async fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), Strin
     }
 }
 
-/// æ˜¾ç¤ºä¸»çª—å£ï¼ˆä¾›æ‰˜ç›˜äº‹ä»¶è°ƒç”¨ï¼‰
+/// ÏÔÊ¾Ö÷´°¿Ú£¨¹©ÍĞÅÌÊÂ¼şµ÷ÓÃ£©
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -146,6 +151,7 @@ pub fn run() {
             get_auto_reply_settings,
             save_auto_reply_settings,
             test_auto_reply,
+            test_ai_reply,
             manual_reply_video_comments,
             get_autostart_status,
             set_autostart,
@@ -153,18 +159,18 @@ pub fn run() {
         .setup(|app| {
             let _handle = app.handle().clone();
 
-            // æ£€æµ‹æ˜¯å¦ç”±å¼€æœºè‡ªå¯å¯åŠ¨
+            // ¼ì²âÊÇ·ñÓÉ¿ª»ú×ÔÆôÆô¶¯
             let is_autostart = std::env::args().any(|a| a == "--from-autostart");
             let is_dev = is_dev_mode();
             if is_autostart {
                 if is_dev {
-                    log::warn!("å¼€å‘æ¨¡å¼ä¸‹ç”±å¼€æœºè‡ªå¯å¯åŠ¨ï¼Œå‰ç«¯æ— æ³•åŠ è½½ï¼Œå°†æ˜¾ç¤ºçª—å£å¹¶è‡ªåŠ¨ç¦ç”¨è‡ªå¯");
+                    log::warn!("¿ª·¢Ä£Ê½ÏÂÓÉ¿ª»ú×ÔÆôÆô¶¯£¬Ç°¶ËÎŞ·¨¼ÓÔØ£¬½«ÏÔÊ¾´°¿Ú²¢×Ô¶¯½ûÓÃ×ÔÆô");
                 } else {
-                    log::info!("åº”ç”¨ç”±å¼€æœºè‡ªå¯å¯åŠ¨ï¼Œå°†éšè—åˆ°ç³»ç»Ÿæ‰˜ç›˜è¿è¡Œ");
+                    log::info!("Ó¦ÓÃÓÉ¿ª»ú×ÔÆôÆô¶¯£¬½«Òş²Øµ½ÏµÍ³ÍĞÅÌÔËĞĞ");
                 }
             }
 
-            // åˆå§‹åŒ–å­˜å‚¨ç›®å½•å’Œè‡ªåŠ¨å›å¤
+            // ³õÊ¼»¯´æ´¢Ä¿Â¼ºÍ×Ô¶¯»Ø¸´
             tauri::async_runtime::block_on(async {
                 storage::init().await;
                 auto_reply::init_settings().await;
@@ -173,34 +179,34 @@ pub fn run() {
                 });
             });
 
-            // æ¸…ç†å¼€å‘æ¨¡å¼ä¸‹çš„æ— æ•ˆè‡ªå¯åŠ¨æ³¨å†Œ
+            // ÇåÀí¿ª·¢Ä£Ê½ÏÂµÄÎŞĞ§×ÔÆô¶¯×¢²á
             if is_autostart && is_dev {
                 use tauri_plugin_autostart::ManagerExt;
                 if let Err(e) = app.autolaunch().disable() {
-                    log::error!("æ¸…ç†å¼€å‘æ¨¡å¼è‡ªå¯æ³¨å†Œå¤±è´¥: {}", e);
+                    log::error!("ÇåÀí¿ª·¢Ä£Ê½×ÔÆô×¢²áÊ§°Ü: {}", e);
                 } else {
-                    log::info!("å·²è‡ªåŠ¨ç¦ç”¨å¼€å‘æ¨¡å¼ä¸‹çš„å¼€æœºè‡ªå¯");
+                    log::info!("ÒÑ×Ô¶¯½ûÓÃ¿ª·¢Ä£Ê½ÏÂµÄ¿ª»ú×ÔÆô");
                 }
             }
 
-            // å¼€æœºè‡ªå¯æ—¶å…ˆéšè—çª—å£ï¼Œç­‰ç”¨æˆ·ç‚¹å‡»æ‰˜ç›˜å†æ˜¾ç¤º
-            // å¼€å‘æ¨¡å¼ä¸‹ä¸éšè—ï¼Œå› ä¸ºå‰ç«¯ä¾èµ– Vite å¼€å‘æœåŠ¡å™¨ï¼Œéšè—åç”¨æˆ·æ— æ³•æ’æŸ¥é—®é¢˜
+            // ¿ª»ú×ÔÆôÊ±ÏÈÒş²Ø´°¿Ú£¬µÈÓÃ»§µã»÷ÍĞÅÌÔÙÏÔÊ¾
+            // ¿ª·¢Ä£Ê½ÏÂ²»Òş²Ø£¬ÒòÎªÇ°¶ËÒÀÀµ Vite ¿ª·¢·şÎñÆ÷£¬Òş²ØºóÓÃ»§ÎŞ·¨ÅÅ²éÎÊÌâ
             if is_autostart && !is_dev {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.hide();
                 }
             }
 
-            // åˆ›å»ºç³»ç»Ÿæ‰˜ç›˜
-            let show_i = MenuItem::with_id(app, "show", "æ˜¾ç¤ºçª—å£", true, None::<&str>)
-                .expect("åˆ›å»ºèœå•é¡¹å¤±è´¥");
-            let quit_i = MenuItem::with_id(app, "quit", "é€€å‡º", true, None::<&str>)
-                .expect("åˆ›å»ºèœå•é¡¹å¤±è´¥");
+            // ´´½¨ÏµÍ³ÍĞÅÌ
+            let show_i = MenuItem::with_id(app, "show", "ÏÔÊ¾´°¿Ú", true, None::<&str>)
+                .expect("´´½¨²Ëµ¥ÏîÊ§°Ü");
+            let quit_i = MenuItem::with_id(app, "quit", "ÍË³ö", true, None::<&str>)
+                .expect("´´½¨²Ëµ¥ÏîÊ§°Ü");
             let menu = Menu::with_items(app, &[&show_i, &quit_i])
-                .expect("åˆ›å»ºèœå•å¤±è´¥");
+                .expect("´´½¨²Ëµ¥Ê§°Ü");
 
             let img = image::load_from_memory(include_bytes!("../icons/32x32.png"))
-                .expect("åŠ è½½å›¾æ ‡å¤±è´¥")
+                .expect("¼ÓÔØÍ¼±êÊ§°Ü")
                 .into_rgba8();
             let (width, height) = img.dimensions();
             let rgba = img.into_raw();
@@ -227,7 +233,7 @@ pub fn run() {
                     }
                 })
                 .build(app)
-                .expect("åˆ›å»ºç³»ç»Ÿæ‰˜ç›˜å¤±è´¥");
+                .expect("´´½¨ÏµÍ³ÍĞÅÌÊ§°Ü");
 
             Ok(())
         })

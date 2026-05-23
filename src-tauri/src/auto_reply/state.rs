@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 const REPLIED_SET_FILE: &str = "replied_set.json";
 const REPLIED_SET_MAX: usize = 10000;
 
-/// è‡ªåŠ¨å›å¤çŠ¶æ€ç®¡ç†å™¨
+/// ×Ô¶¯»Ø¸´×´Ì¬¹ÜÀíÆ÷
 pub struct AutoReplyState {
     settings: Arc<RwLock<AutoReplySettings>>,
     replied_set: Arc<RwLock<HashSet<String>>>,
@@ -17,11 +17,11 @@ pub struct AutoReplyState {
 impl AutoReplyState {
     pub fn new() -> Result<Self, String> {
         let data_dir = dirs::home_dir()
-            .ok_or("æ— æ³•è·å–ç”¨æˆ·ç›®å½•")?
+            .ok_or("ÎŞ·¨»ñÈ¡ÓÃ»§Ä¿Â¼")?
             .join(".bilibili_account_manager");
 
         std::fs::create_dir_all(&data_dir)
-            .map_err(|e| format!("åˆ›å»ºæ•°æ®ç›®å½•å¤±è´¥: {}", e))?;
+            .map_err(|e| format!("´´½¨Êı¾İÄ¿Â¼Ê§°Ü: {}", e))?;
 
         Ok(Self {
             settings: Arc::new(RwLock::new(AutoReplySettings::default())),
@@ -30,7 +30,7 @@ impl AutoReplyState {
         })
     }
 
-    /// ä»æ–‡ä»¶åŠ è½½è®¾ç½®
+    /// ´ÓÎÄ¼ş¼ÓÔØÉèÖÃ
     pub async fn load_settings(&self) {
         let file_path = self.data_dir.join("auto_reply_settings.json");
         if !file_path.exists() {
@@ -40,7 +40,7 @@ impl AutoReplyState {
         let json = match tokio::fs::read_to_string(&file_path).await {
             Ok(content) => content,
             Err(e) => {
-                log::warn!("è¯»å–è‡ªåŠ¨å›å¤è®¾ç½®å¤±è´¥: {}", e);
+                log::warn!("¶ÁÈ¡×Ô¶¯»Ø¸´ÉèÖÃÊ§°Ü: {}", e);
                 return;
             }
         };
@@ -48,7 +48,7 @@ impl AutoReplyState {
         let loaded: AutoReplySettings = match serde_json::from_str(&json) {
             Ok(s) => s,
             Err(e) => {
-                log::warn!("è§£æè‡ªåŠ¨å›å¤è®¾ç½®å¤±è´¥: {}", e);
+                log::warn!("½âÎö×Ô¶¯»Ø¸´ÉèÖÃÊ§°Ü: {}", e);
                 return;
             }
         };
@@ -59,29 +59,31 @@ impl AutoReplyState {
         settings.interval = loaded.interval;
         settings.reply_only_once = loaded.reply_only_once;
         settings.sources = loaded.sources;
+        settings.like_comments = loaded.like_comments;
+        settings.ai = loaded.ai;
         if !loaded.history.is_empty() {
             settings.history = loaded.history;
         }
-        log::info!("å·²åŠ è½½è‡ªåŠ¨å›å¤è®¾ç½®ï¼Œå†å²è®°å½• {} æ¡", settings.history.len());
+        log::info!("ÒÑ¼ÓÔØ×Ô¶¯»Ø¸´ÉèÖÃ£¬ÀúÊ·¼ÇÂ¼ {} Ìõ", settings.history.len());
     }
 
-    /// ä¿å­˜è®¾ç½®åˆ°æ–‡ä»¶
+    /// ±£´æÉèÖÃµ½ÎÄ¼ş
     pub async fn persist_settings(&self) {
         let settings = self.settings.read().await;
         let json = match serde_json::to_string(&*settings) {
             Ok(j) => j,
             Err(e) => {
-                log::error!("åºåˆ—åŒ–è®¾ç½®å¤±è´¥: {}", e);
+                log::error!("ĞòÁĞ»¯ÉèÖÃÊ§°Ü: {}", e);
                 return;
             }
         };
         let file_path = self.data_dir.join("auto_reply_settings.json");
         if let Err(e) = tokio::fs::write(&file_path, json).await {
-            log::error!("ä¿å­˜è®¾ç½®åˆ°æ–‡ä»¶å¤±è´¥: {}", e);
+            log::error!("±£´æÉèÖÃµ½ÎÄ¼şÊ§°Ü: {}", e);
         }
     }
 
-    /// æ›´æ–°è®¾ç½®
+    /// ¸üĞÂÉèÖÃ
     pub async fn update_settings<F, R>(&self, updater: F) -> Result<R, String>
     where
         F: FnOnce(&mut AutoReplySettings) -> R,
@@ -93,20 +95,20 @@ impl AutoReplyState {
         Ok(result)
     }
 
-    /// è·å–è®¾ç½®å‰¯æœ¬
+    /// »ñÈ¡ÉèÖÃ¸±±¾
     pub async fn get_settings(&self) -> AutoReplySettings {
         self.settings.read().await.clone()
     }
 
     // ============================================================
-    //  replied_set æŒä¹…åŒ–ç®¡ç†
+    //  replied_set ³Ö¾Ã»¯¹ÜÀí
     // ============================================================
 
     fn replied_set_path(&self) -> PathBuf {
         self.data_dir.join(REPLIED_SET_FILE)
     }
 
-    /// ä»ç£ç›˜åŠ è½½å·²å›å¤é›†åˆ
+    /// ´Ó´ÅÅÌ¼ÓÔØÒÑ»Ø¸´¼¯ºÏ
     pub async fn load_replied_set(&self) {
         let file_path = self.replied_set_path();
         if !file_path.exists() {
@@ -116,7 +118,7 @@ impl AutoReplyState {
         let json = match tokio::fs::read_to_string(&file_path).await {
             Ok(content) => content,
             Err(e) => {
-                log::warn!("è¯»å–å·²å›å¤é›†åˆå¤±è´¥: {}", e);
+                log::warn!("¶ÁÈ¡ÒÑ»Ø¸´¼¯ºÏÊ§°Ü: {}", e);
                 return;
             }
         };
@@ -124,7 +126,7 @@ impl AutoReplyState {
         let loaded: HashSet<String> = match serde_json::from_str(&json) {
             Ok(s) => s,
             Err(e) => {
-                log::warn!("è§£æå·²å›å¤é›†åˆå¤±è´¥: {}", e);
+                log::warn!("½âÎöÒÑ»Ø¸´¼¯ºÏÊ§°Ü: {}", e);
                 return;
             }
         };
@@ -133,51 +135,51 @@ impl AutoReplyState {
         *set = loaded;
         let count = set.len();
         drop(set);
-        log::info!("å·²åŠ è½½å·²å›å¤é›†åˆï¼Œå…± {} æ¡è®°å½•", count);
+        log::info!("ÒÑ¼ÓÔØÒÑ»Ø¸´¼¯ºÏ£¬¹² {} Ìõ¼ÇÂ¼", count);
     }
 
-    /// ä¿å­˜å·²å›å¤é›†åˆåˆ°ç£ç›˜
+    /// ±£´æÒÑ»Ø¸´¼¯ºÏµ½´ÅÅÌ
     async fn persist_replied_set(&self) {
         let set = self.replied_set.read().await;
         let json = match serde_json::to_string(&*set) {
             Ok(j) => j,
             Err(e) => {
-                log::error!("åºåˆ—åŒ–å·²å›å¤é›†åˆå¤±è´¥: {}", e);
+                log::error!("ĞòÁĞ»¯ÒÑ»Ø¸´¼¯ºÏÊ§°Ü: {}", e);
                 return;
             }
         };
         let file_path = self.replied_set_path();
         if let Err(e) = tokio::fs::write(&file_path, json).await {
-            log::error!("ä¿å­˜å·²å›å¤é›†åˆåˆ°æ–‡ä»¶å¤±è´¥: {}", e);
+            log::error!("±£´æÒÑ»Ø¸´¼¯ºÏµ½ÎÄ¼şÊ§°Ü: {}", e);
         }
     }
 
-    /// æ£€æŸ¥æ˜¯å¦å·²å›å¤è¿‡
+    /// ¼ì²éÊÇ·ñÒÑ»Ø¸´¹ı
     pub async fn is_replied(&self, key: &str) -> bool {
         let set = self.replied_set.read().await;
         set.contains(key)
     }
 
-    /// æ ‡è®°ä¸ºå·²å›å¤ï¼ˆåŒæ—¶æŒä¹…åŒ–åˆ°ç£ç›˜ï¼‰
+    /// ±ê¼ÇÎªÒÑ»Ø¸´£¨Í¬Ê±³Ö¾Ã»¯µ½´ÅÅÌ£©
     pub async fn mark_replied(&self, key: String) {
         {
             let mut set = self.replied_set.write().await;
             if set.len() >= REPLIED_SET_MAX {
                 set.clear();
-                log::warn!("å·²å›å¤é›†åˆè¶…è¿‡ä¸Šé™({})ï¼Œå·²æ¸…ç©º", REPLIED_SET_MAX);
+                log::warn!("ÒÑ»Ø¸´¼¯ºÏ³¬¹ıÉÏÏŞ({})£¬ÒÑÇå¿Õ", REPLIED_SET_MAX);
             }
             set.insert(key);
         }
         self.persist_replied_set().await;
     }
 
-    /// ä»å†å²è®°å½•ä¸­æ£€æŸ¥æ˜¯å¦å·²å›å¤è¿‡æŸç”¨æˆ·ï¼ˆé’ˆå¯¹ç§ä¿¡/å…³æ³¨çš„é™çº§ä¿éšœï¼‰
+    /// ´ÓÀúÊ·¼ÇÂ¼ÖĞ¼ì²éÊÇ·ñÒÑ»Ø¸´¹ıÄ³ÓÃ»§£¨Õë¶ÔË½ĞÅ/¹Ø×¢µÄ½µ¼¶±£ÕÏ£©
     pub async fn is_replied_in_history(&self, user_identifier: &str, source: &MsgSource) -> bool {
         let settings = self.settings.read().await;
         settings.history.iter().any(|h| h.user == user_identifier && h.source == *source)
     }
 
-    /// æ·»åŠ å›å¤å†å²è®°å½•
+    /// Ìí¼Ó»Ø¸´ÀúÊ·¼ÇÂ¼
     pub async fn add_history(&self, user: String, message: String, source: MsgSource) {
         let history = ReplyHistory::new(user, message, source);
         self.update_settings(|settings| {
@@ -191,15 +193,15 @@ impl AutoReplyState {
     }
 }
 
-/// å…¨å±€çŠ¶æ€ç®¡ç†å™¨å®ä¾‹
+/// È«¾Ö×´Ì¬¹ÜÀíÆ÷ÊµÀı
 static GLOBAL_STATE: std::sync::OnceLock<Arc<AutoReplyState>> = std::sync::OnceLock::new();
 
-/// åˆå§‹åŒ–å…¨å±€çŠ¶æ€
+/// ³õÊ¼»¯È«¾Ö×´Ì¬
 pub async fn init_global_state() {
     let state = match AutoReplyState::new() {
         Ok(s) => Arc::new(s),
         Err(e) => {
-            log::error!("åˆå§‹åŒ–çŠ¶æ€ç®¡ç†å™¨å¤±è´¥: {}", e);
+            log::error!("³õÊ¼»¯×´Ì¬¹ÜÀíÆ÷Ê§°Ü: {}", e);
             return;
         }
     };
@@ -208,7 +210,7 @@ pub async fn init_global_state() {
     GLOBAL_STATE.get_or_init(|| state);
 }
 
-/// è·å–å…¨å±€çŠ¶æ€ç®¡ç†å™¨
+/// »ñÈ¡È«¾Ö×´Ì¬¹ÜÀíÆ÷
 pub fn get_global_state() -> &'static Arc<AutoReplyState> {
-    GLOBAL_STATE.get().expect("å…¨å±€çŠ¶æ€æœªåˆå§‹åŒ–ï¼Œè¯·å…ˆè°ƒç”¨ init_global_state()")
+    GLOBAL_STATE.get().expect("È«¾Ö×´Ì¬Î´³õÊ¼»¯£¬ÇëÏÈµ÷ÓÃ init_global_state()")
 }

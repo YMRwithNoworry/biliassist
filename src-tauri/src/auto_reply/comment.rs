@@ -1,4 +1,4 @@
-use super::handler::{MessageHandler, Message};
+﻿use super::handler::{MessageHandler, Message};
 use super::http::{get_http_client, resp_to_json, extract_csrf};
 use super::models::MsgSource;
 use super::state::AutoReplyState;
@@ -251,11 +251,13 @@ impl CommentHandler {
                 if mid == my_mid || rpid == 0 { continue; }
                 if Self::is_replied(reply, my_mid) { filtered += 1; continue; }
 
+                let comment_text = reply["content"]["message"].as_str().unwrap_or("").to_string();
+
                 messages.push(Message {
                     id: format!("{}:{}", aid, rpid),
                     user_id: mid.to_string(),
                     user_name: nickname,
-                    content: None,
+                    content: if comment_text.is_empty() { None } else { Some(comment_text) },
                     extra_data: serde_json::json!({ "aid": aid, "rpid": rpid }),
                 });
             }
@@ -297,11 +299,13 @@ impl CommentHandler {
                 if mid == my_mid || rpid == 0 { continue; }
                 if Self::is_replied(reply, my_mid) { filtered += 1; continue; }
 
+                let comment_text = reply["content"]["message"].as_str().unwrap_or("").to_string();
+
                 messages.push(Message {
                     id: format!("{}:{}", aid, rpid),
                     user_id: mid.to_string(),
                     user_name: nickname,
-                    content: None,
+                    content: if comment_text.is_empty() { None } else { Some(comment_text) },
                     extra_data: serde_json::json!({ "aid": aid, "rpid": rpid }),
                 });
             }

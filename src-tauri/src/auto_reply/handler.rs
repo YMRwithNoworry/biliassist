@@ -3,7 +3,7 @@ use super::state::AutoReplyState;
 use crate::bilibili::UserInfo;
 use async_trait::async_trait;
 
-/// æ¶ˆæ¯ç»“æ„
+/// ÏûÏ¢½á¹¹
 #[derive(Debug, Clone)]
 pub struct Message {
     pub id: String,
@@ -14,7 +14,7 @@ pub struct Message {
     pub extra_data: serde_json::Value,
 }
 
-/// å¤„ç†ç»“æœ
+/// ´¦Àí½á¹û
 #[derive(Debug, Default)]
 pub struct HandleResult {
     pub success_count: u32,
@@ -22,7 +22,7 @@ pub struct HandleResult {
     pub stopped_by_rate_limit: bool,
 }
 
-/// æ¶ˆæ¯å¤„ç†å™¨ trait
+/// ÏûÏ¢´¦ÀíÆ÷ trait
 #[async_trait]
 pub trait MessageHandler: Send + Sync {
     fn name(&self) -> &'static str;
@@ -52,30 +52,46 @@ pub trait MessageHandler: Send + Sync {
                 continue;
             }
 
-            // å†å²è®°å½•å›æŸ¥ï¼ˆç§ä¿¡/å…³æ³¨é™çº§ä¿éšœï¼‰
+            // ÀúÊ·¼ÇÂ¼»Ø²é£¨Ë½ĞÅ/¹Ø×¢½µ¼¶±£ÕÏ£©
             if settings.reply_only_once && self.needs_history_fallback()
                 && state.is_replied_in_history(&message.user_id, &self.source_type()).await
             {
-                log::info!("å†å²è®°å½•å›æŸ¥å‘½ä¸­ï¼Œè·³è¿‡å·²å›å¤ç”¨æˆ·: {}", message.user_id);
-                // åŒæ­¥åˆ° replied_set é¿å…ä¸‹æ¬¡å†æŸ¥å†å²
+                log::info!("ÀúÊ·¼ÇÂ¼»Ø²éÃüÖĞ£¬Ìø¹ıÒÑ»Ø¸´ÓÃ»§: {}", message.user_id);
+                // Í¬²½µ½ replied_set ±ÜÃâÏÂ´ÎÔÙ²éÀúÊ·
                 state.mark_replied(dedup_key).await;
                 continue;
             }
 
-            let formatted = format_message(&settings.message, &message.user_name);
+            // Éú³É»Ø¸´ÄÚÈİ£ºÓÅÏÈÊ¹ÓÃ AI£¬·ñÔòÊ¹ÓÃÄ£°å
+            let reply_text = if settings.ai.enabled {
+                let source_name = self.source_type().display_name();
+                let msg_content = message.content.as_deref().unwrap_or("");
+                match super::ai::generate_reply(&settings.ai, &message.user_name, msg_content, source_name).await {
+                    Ok(ai_reply) => {
+                        log::info!("AI Éú³É»Ø¸´³É¹¦: user={}, reply={}", message.user_name, ai_reply);
+                        ai_reply
+                    }
+                    Err(e) => {
+                        log::warn!("AI Éú³É»Ø¸´Ê§°Ü£¬»ØÍËµ½Ä£°å: {}", e);
+                        format_message(&settings.message, &message.user_name)
+                    }
+                }
+            } else {
+                format_message(&settings.message, &message.user_name)
+            };
 
-            match self.send_reply(account, &message, &formatted).await {
+            match self.send_reply(account, &message, &reply_text).await {
                 Ok(_) => {
                     if settings.reply_only_once {
                         state.mark_replied(dedup_key).await;
                     }
-                    state.add_history(message.user_name.clone(), formatted, self.source_type()).await;
+                    state.add_history(message.user_name.clone(), reply_text, self.source_type()).await;
                     result.success_count += 1;
 
                     self.on_reply_success(account, &message, state).await;
                 }
                 Err(e) => {
-                    log::error!("{}å›å¤å¤±è´¥: {}", self.name(), e);
+                    log::error!("{}»Ø¸´Ê§°Ü: {}", self.name(), e);
                     result.error_count += 1;
 
                     if is_rate_limit_error(&e) {
@@ -92,23 +108,23 @@ pub trait MessageHandler: Send + Sync {
     }
 }
 
-/// æ ¼å¼åŒ–æ¶ˆæ¯
+/// ¸ñÊ½»¯ÏûÏ¢
 pub fn format_message(template: &str, username: &str) -> String {
     use chrono::{FixedOffset, TimeZone};
     let beijing_now = FixedOffset::east_opt(8 * 3600)
         .unwrap()
         .from_utc_datetime(&chrono::Utc::now().naive_utc());
     template
-        .replace("{ç”¨æˆ·å}", username)
-        .replace("{æ—¶é—´}", &beijing_now.format("%Y-%m-%d %H:%M:%S").to_string())
+        .replace("{ÓÃ»§Ãû}", username)
+        .replace("{Ê±¼ä}", &beijing_now.format("%Y-%m-%d %H:%M:%S").to_string())
 }
 
-/// åˆ¤æ–­æ˜¯å¦ä¸ºé£æ§é”™è¯¯
+/// ÅĞ¶ÏÊÇ·ñÎª·ç¿Ø´íÎó
 pub fn is_rate_limit_error(error: &str) -> bool {
-    error.contains("banned") || error.contains("é¢‘ç¹")
+    error.contains("banned") || error.contains("Æµ·±")
 }
 
-/// ç”Ÿæˆè®¾å¤‡ID (dev_id)
+/// Éú³ÉÉè±¸ID (dev_id)
 pub fn generate_dev_id() -> String {
     let mut result = String::with_capacity(36);
     let mut rng = rand::thread_rng();
@@ -130,7 +146,7 @@ pub fn generate_dev_id() -> String {
     result
 }
 
-/// æ¶ˆæ¯å¤„ç†å™¨æ³¨å†Œè¡¨
+/// ÏûÏ¢´¦ÀíÆ÷×¢²á±í
 pub struct HandlerRegistry {
     handlers: Vec<Box<dyn MessageHandler>>,
 }
