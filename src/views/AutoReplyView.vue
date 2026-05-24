@@ -143,10 +143,10 @@
               type="text"
               v-model="aiBaseUrl"
               class="input"
-              placeholder="https://api.openai.com/v1"
+              placeholder="https://api.deepseek.com"
               @blur="save"
             />
-            <div class="field-hint">兼容 OpenAI 接口的服务地址，如 OpenAI、DeepSeek、Ollama 等</div>
+            <div class="field-hint">兼容 OpenAI 接口的服务地址，如 DeepSeek、OpenAI、Ollama 等</div>
           </div>
 
           <div class="form-field">
@@ -158,7 +158,7 @@
               placeholder="gpt-4o-mini"
               @blur="save"
             />
-            <div class="field-hint">例如 gpt-4o-mini、deepseek-chat、qwen-turbo 等</div>
+            <div class="field-hint">例如 deepseek-chat、gpt-4o-mini、qwen2.5:7b 等</div>
           </div>
 
           <div class="form-field">
@@ -384,7 +384,7 @@ const aiTestError = ref(false)
 
 const applyPreset = (provider) => {
   const presets = {
-    deepseek: { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+    deepseek: { baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' },
     openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
     ollama: { baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5:7b' },
   }
