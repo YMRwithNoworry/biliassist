@@ -7,9 +7,29 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: false,
+    host: '127.0.0.1',
     hmr: {
       port: 1421
+    },
+    watch: {
+      usePolling: true,
+      interval: 2000,
+      ignored: [
+        '**/node_modules/**',
+        '**/dist/**',
+        '**/src-tauri/**',
+        '**/target/**',
+        '**/prompts/**',
+        '**/杂物/**',
+        '**/.wrangler/**',
+        '**/tauri-app/**',
+        '**/docs/**',
+        '**/*.cjs',
+        '**/*.bat',
+        '**/*.sh',
+        '**/*.md',
+        '**/*.lock'
+      ]
     }
   }
 }))
