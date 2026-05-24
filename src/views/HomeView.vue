@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="home-page">
     <!-- Header -->
     <header class="home-header">
@@ -65,6 +65,76 @@
             @click="submitKey"
           >
             {{ keySubmitting ? '验证中...' : '激活' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Purchase Reminder Dialog -->
+    <div v-if="showPurchaseDialog" class="dialog-overlay" @click.self="closePurchaseDialog">
+      <div class="purchase-dialog">
+        <div class="purchase-header">
+          <div class="purchase-icon-wrap" :class="auth.isPlus ? 'icon-plus' : 'icon-basic'">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+            </svg>
+          </div>
+          <div>
+            <h2 class="purchase-title">{{ auth.isPlus ? '获取激活码' : '升级到 Plus' }}</h2>
+            <p class="purchase-subtitle">{{ auth.isPlus ? '为其他账号或朋友购买' : '解锁自动回复、自动点赞等全部功能' }}</p>
+          </div>
+          <button class="dialog-close purchase-close" @click="closePurchaseDialog">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="purchase-body">
+          <a href="#" @click.prevent="openPurchaseLink" class="purchase-link-card">
+            <div class="purchase-link-header">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                <polyline points="15 3 21 3 21 9"/>
+                <line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+              <span class="purchase-link-label">爱发电购买页面</span>
+            </div>
+            <span class="purchase-link-url">ifdian.net/a/Alkut</span>
+          </a>
+
+          <div class="purchase-plan">
+            <div class="purchase-plan-name">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3FB950" stroke-width="2">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              B站账号自动化工具 plus 账户兑换码独立方案
+            </div>
+            <p class="purchase-plan-desc">付款后自动收到激活码，在下方输入即可升级</p>
+          </div>
+
+          <div class="purchase-steps">
+            <div class="purchase-step">
+              <span class="step-num">1</span>
+              <span>打开上方链接，选择方案并付款</span>
+            </div>
+            <div class="purchase-step">
+              <span class="step-num">2</span>
+              <span>收到激活码后，点击下方按钮输入</span>
+            </div>
+            <div class="purchase-step">
+              <span class="step-num">3</span>
+              <span>激活成功，享受 Plus 全部功能</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="purchase-footer">
+          <button class="btn btn-outline" @click="closePurchaseDialog">
+            {{ auth.isPlus ? '稍后再说' : '暂不升级' }}
+          </button>
+          <button class="btn btn-primary" @click="closePurchaseDialog(); showKeyDialog = true">
+            输入激活码
           </button>
         </div>
       </div>
@@ -179,6 +249,20 @@ let reminderTimer = null
 
 const REMINDER_INTERVAL = 30 * 60 * 1000
 
+const PURCHASE_DISMISSED_KEY = 'biliassist_purchase_dialog_dismissed'
+const showPurchaseDialog = ref(false)
+
+function openPurchaseLink() {
+  window.open('https://www.ifdian.net/a/Alkut?tab=home', '_blank')
+}
+
+function closePurchaseDialog() {
+  showPurchaseDialog.value = false
+  if (auth.isPlus) {
+    try { localStorage.setItem(PURCHASE_DISMISSED_KEY, 'true') } catch {}
+  }
+}
+
 async function submitKey() {
   if (!licenseKey.value || keySubmitting.value) return
   keySubmitting.value = true
@@ -248,6 +332,12 @@ const logout = async () => {
 
 onMounted(() => {
   startReminderTimer()
+  if (auth.isPlus) {
+    const dismissed = localStorage.getItem(PURCHASE_DISMISSED_KEY)
+    showPurchaseDialog.value = dismissed !== 'true'
+  } else {
+    showPurchaseDialog.value = true
+  }
 })
 
 onUnmounted(() => {
@@ -750,4 +840,521 @@ onUnmounted(() => {
     height: 40px;
   }
 }
+/* Purchase Dialog */
+.purchase-dialog {
+  width: 100%;
+  max-width: 480px;
+  background-color: #161B22;
+  border: 1px solid #30363D;
+  border-radius: 16px;
+  overflow: hidden;
+  animation: purchase-slide-in 0.3s ease;
+}
+
+@keyframes purchase-slide-in {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.purchase-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 24px 24px 0;
+  position: relative;
+}
+
+.purchase-icon-wrap {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.purchase-icon-wrap.icon-basic {
+  background: linear-gradient(135deg, #F0883E 0%, #DB6D28 100%);
+  color: #FFFFFF;
+}
+
+.purchase-icon-wrap.icon-plus {
+  background: linear-gradient(135deg, #2F81F7 0%, #1F6FEB 100%);
+  color: #FFFFFF;
+}
+
+.purchase-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #E6EDF3;
+  margin: 0 0 4px 0;
+}
+
+.purchase-subtitle {
+  font-size: 13px;
+  color: #8B949E;
+  margin: 0;
+}
+
+.purchase-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+}
+
+.purchase-body {
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.purchase-link-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background-color: #0D1117;
+  border: 1px solid #30363D;
+  border-radius: 10px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.purchase-link-card:hover {
+  border-color: #2F81F7;
+  background-color: #161B22;
+}
+
+.purchase-link-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #2F81F7;
+}
+
+.purchase-link-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #2F81F7;
+}
+
+.purchase-link-url {
+  font-size: 12px;
+  color: #6E7681;
+  padding-left: 28px;
+}
+
+.purchase-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background-color: rgba(63, 185, 80, 0.06);
+  border: 1px solid rgba(63, 185, 80, 0.2);
+  border-radius: 10px;
+}
+
+.purchase-plan-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #E6EDF3;
+}
+
+.purchase-plan-desc {
+  font-size: 12px;
+  color: #8B949E;
+  margin: 0;
+  padding-left: 24px;
+}
+
+.purchase-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.purchase-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: #C9D1D9;
+}
+
+.step-num {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #21262D;
+  border: 1px solid #30363D;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8B949E;
+  flex-shrink: 0;
+}
+
+.purchase-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px 24px;
+}
+
+.btn-outline {
+  background: transparent;
+  border: 1px solid #30363D;
+  color: #C9D1D9;
+}
+
+.btn-outline:hover {
+  background-color: #21262D;
+  border-color: #484F58;
+}
+/* Purchase Dialog */
+.purchase-dialog {
+  width: 100%;
+  max-width: 480px;
+  background-color: #161B22;
+  border: 1px solid #30363D;
+  border-radius: 16px;
+  overflow: hidden;
+  animation: purchase-slide-in 0.3s ease;
+}
+
+@keyframes purchase-slide-in {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.purchase-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 24px 24px 0;
+  position: relative;
+}
+
+.purchase-icon-wrap {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.purchase-icon-wrap.icon-basic {
+  background: linear-gradient(135deg, #F0883E 0%, #DB6D28 100%);
+  color: #FFFFFF;
+}
+
+.purchase-icon-wrap.icon-plus {
+  background: linear-gradient(135deg, #2F81F7 0%, #1F6FEB 100%);
+  color: #FFFFFF;
+}
+
+.purchase-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #E6EDF3;
+  margin: 0 0 4px 0;
+}
+
+.purchase-subtitle {
+  font-size: 13px;
+  color: #8B949E;
+  margin: 0;
+}
+
+.purchase-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+}
+
+.purchase-body {
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.purchase-link-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background-color: #0D1117;
+  border: 1px solid #30363D;
+  border-radius: 10px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.purchase-link-card:hover {
+  border-color: #2F81F7;
+  background-color: #161B22;
+}
+
+.purchase-link-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #2F81F7;
+}
+
+.purchase-link-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #2F81F7;
+}
+
+.purchase-link-url {
+  font-size: 12px;
+  color: #6E7681;
+  padding-left: 28px;
+}
+
+.purchase-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background-color: rgba(63, 185, 80, 0.06);
+  border: 1px solid rgba(63, 185, 80, 0.2);
+  border-radius: 10px;
+}
+
+.purchase-plan-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #E6EDF3;
+}
+
+.purchase-plan-desc {
+  font-size: 12px;
+  color: #8B949E;
+  margin: 0;
+  padding-left: 24px;
+}
+
+.purchase-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.purchase-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: #C9D1D9;
+}
+
+.step-num {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #21262D;
+  border: 1px solid #30363D;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8B949E;
+  flex-shrink: 0;
+}
+
+.purchase-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px 24px;
+}
+
+.btn-outline {
+  background: transparent;
+  border: 1px solid #30363D;
+  color: #C9D1D9;
+}
+
+.btn-outline:hover {
+  background-color: #21262D;
+  border-color: #484F58;
+}
+/* Purchase Dialog */
+.purchase-dialog {
+  width: 100%;
+  max-width: 480px;
+  background-color: #161B22;
+  border: 1px solid #30363D;
+  border-radius: 16px;
+  overflow: hidden;
+  animation: purchase-slide-in 0.3s ease;
+}
+@keyframes purchase-slide-in {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.purchase-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 24px 24px 0;
+  position: relative;
+}
+.purchase-icon-wrap {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.purchase-icon-wrap.icon-basic {
+  background: linear-gradient(135deg, #F0883E 0%, #DB6D28 100%);
+  color: #FFFFFF;
+}
+.purchase-icon-wrap.icon-plus {
+  background: linear-gradient(135deg, #2F81F7 0%, #1F6FEB 100%);
+  color: #FFFFFF;
+}
+.purchase-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #E6EDF3;
+  margin: 0 0 4px 0;
+}
+.purchase-subtitle {
+  font-size: 13px;
+  color: #8B949E;
+  margin: 0;
+}
+.purchase-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+}
+.purchase-body {
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.purchase-link-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background-color: #0D1117;
+  border: 1px solid #30363D;
+  border-radius: 10px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.purchase-link-card:hover {
+  border-color: #2F81F7;
+  background-color: #161B22;
+}
+.purchase-link-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #2F81F7;
+}
+.purchase-link-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #2F81F7;
+}
+.purchase-link-url {
+  font-size: 12px;
+  color: #6E7681;
+  padding-left: 28px;
+}
+.purchase-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background-color: rgba(63, 185, 80, 0.06);
+  border: 1px solid rgba(63, 185, 80, 0.2);
+  border-radius: 10px;
+}
+.purchase-plan-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #E6EDF3;
+}
+.purchase-plan-desc {
+  font-size: 12px;
+  color: #8B949E;
+  margin: 0;
+  padding-left: 24px;
+}
+.purchase-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.purchase-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: #C9D1D9;
+}
+.step-num {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #21262D;
+  border: 1px solid #30363D;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8B949E;
+  flex-shrink: 0;
+}
+.purchase-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px 24px;
+}
+.btn-outline {
+  background: transparent;
+  border: 1px solid #30363D;
+  color: #C9D1D9;
+}
+.btn-outline:hover {
+  background-color: #21262D;
+  border-color: #484F58;
+}
 </style>
+
+
+
