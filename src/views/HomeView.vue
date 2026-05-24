@@ -198,6 +198,7 @@ async function submitKey() {
 
     keySuccess.value = '激活成功！'
     auth.userTier = 'plus'
+    auth.saveLocalActivation()
     setTimeout(() => { showKeyDialog.value = false }, 1000)
   } catch (e) {
     keyError.value = typeof e === 'string' ? e : (e?.message || '激活失败，请检查密钥')

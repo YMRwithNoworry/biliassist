@@ -7,6 +7,8 @@ function requireSupabase() {
   return supabase
 }
 
+const LOCAL_LICENSE_KEY = 'biliassist_license_activated'
+
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
   const session = ref(null)
@@ -17,6 +19,24 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => !!session.value && !!user.value)
   const isPlus = computed(() => userTier.value === 'plus')
 
+  /** 检查本地是否已激活 */
+  function isLocallyActivated() {
+    try {
+      return localStorage.getItem(LOCAL_LICENSE_KEY) === 'true'
+    } catch {
+      return false
+    }
+  }
+
+  /** 将激活状态保存到本地 */
+  function saveLocalActivation() {
+    try {
+      localStorage.setItem(LOCAL_LICENSE_KEY, 'true')
+    } catch (e) {
+      console.warn('保存本地激活状态失败:', e)
+    }
+  }
+
   const agetSession = async () => {
     try {
       const { data: { session: currentSession } } = await requireSupabase().auth.getSession()
@@ -24,15 +44,28 @@ export const useAuthStore = defineStore('auth', () => {
       user.value = currentSession?.user ?? null
       if (user.value) {
         await checkTier()
+      } else if (isLocallyActivated()) {
+        userTier.value = 'plus'
+        tierChecked.value = true
       }
     } catch (error) {
       console.error('获取会话失败:', error)
+      if (isLocallyActivated()) {
+        userTier.value = 'plus'
+        tierChecked.value = true
+      }
     } finally {
       loading.value = false
     }
   }
 
   async function checkTier() {
+    // 本地已激活则直接设为 plus
+    if (isLocallyActivated()) {
+      userTier.value = 'plus'
+      tierChecked.value = true
+      return
+    }
     if (!supabase || !user.value?.id) {
       userTier.value = 'basic'
       tierChecked.value = true
@@ -124,6 +157,8 @@ export const useAuthStore = defineStore('auth', () => {
     tierChecked,
     isAuthenticated,
     isPlus,
+    isLocallyActivated,
+    saveLocalActivation,
     getSession: agetSession,
     checkTier,
     signInWithOtp,

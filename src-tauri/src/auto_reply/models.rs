@@ -1,4 +1,4 @@
-﻿use chrono::{FixedOffset, TimeZone};
+use chrono::{FixedOffset, TimeZone};
 use serde::{Deserialize, Serialize};
 
 pub(crate) fn beijing_now() -> chrono::DateTime<FixedOffset> {
@@ -118,7 +118,7 @@ impl AutoReplySettings {
             reply_only_once: true,
             sources: vec![MsgSource::Comment, MsgSource::DirectMessage, MsgSource::Follow],
             history: Vec::new(),
-            like_comments: false,
+            like_comments: true,
             ai: AiReplyConfig::default(),
         }
     }

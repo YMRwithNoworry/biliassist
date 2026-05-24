@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="auto-reply-page">
     <!-- Header -->
     <header class="page-header">
@@ -365,7 +365,7 @@ const enabled = ref(true)
 const message = ref('感谢您的留言！我会尽快回复。')
 const interval = ref(60)
 const replyOnlyOnce = ref(true)
-const likeComments = ref(false)
+const likeComments = ref(true)
 const sources = ref(['comment', 'directMessage', 'follow'])
 const history = ref([])
 const autostartEnabled = ref(false)
@@ -381,6 +381,20 @@ const showApiKey = ref(false)
 const aiTesting = ref(false)
 const aiTestResult = ref('')
 const aiTestError = ref(false)
+
+const applyPreset = (provider) => {
+  const presets = {
+    deepseek: { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+    openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+    ollama: { baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5:7b' },
+  }
+  const p = presets[provider]
+  if (p) {
+    aiBaseUrl.value = p.baseUrl
+    aiModel.value = p.model
+    save()
+  }
+}
 
 const sourceLabel = (s) => {
   const map = { comment: '评论', directMessage: '私信', follow: '关注' }
@@ -411,7 +425,7 @@ const load = async () => {
     message.value = s.message
     interval.value = s.interval
     replyOnlyOnce.value = s.replyOnlyOnce
-    likeComments.value = s.likeComments ?? false
+    likeComments.value = s.likeComments ?? true
     sources.value = s.sources || ['comment', 'directMessage', 'follow']
     history.value = s.history || []
     // 加载 AI 配置
@@ -1007,6 +1021,37 @@ onMounted(() => load())
 }
 
 .var-chip:hover {
+  background-color: #388BFD1A;
+  border-color: #2F81F7;
+  color: #A5D6FF;
+}
+
+/* Preset Buttons */
+.preset-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.preset-label {
+  font-size: 12px;
+  color: #8B949E;
+}
+
+.preset-btn {
+  padding: 4px 12px;
+  background-color: #21262D;
+  border: 1px solid #30363D;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #79C0FF;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.preset-btn:hover {
   background-color: #388BFD1A;
   border-color: #2F81F7;
   color: #A5D6FF;
