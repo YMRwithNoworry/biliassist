@@ -6,11 +6,13 @@ use tokio::sync::RwLock;
 
 const REPLIED_SET_FILE: &str = "replied_set.json";
 const REPLIED_SET_MAX: usize = 10000;
+const LIKED_SET_FILE: &str = "liked_set.json";
 
 /// \u{81ea}\u{52a8}\u{56de}\u{590d}\u{72b6}\u{6001}\u{7ba1}\u{7406}\u{5668}
 pub struct AutoReplyState {
     settings: Arc<RwLock<AutoReplySettings>>,
     replied_set: Arc<RwLock<HashSet<String>>>,
+    liked_set: Arc<RwLock<HashSet<String>>>,
     data_dir: PathBuf,
 }
 
@@ -26,6 +28,7 @@ impl AutoReplyState {
         Ok(Self {
             settings: Arc::new(RwLock::new(AutoReplySettings::default())),
             replied_set: Arc::new(RwLock::new(HashSet::new())),
+            liked_set: Arc::new(RwLock::new(HashSet::new())),
             data_dir,
         })
     }
@@ -103,6 +106,10 @@ impl AutoReplyState {
     // ============================================================
     //  replied_set \u{6301}\u{4e45}\u{5316}\u{7ba1}\u{7406}
     // ============================================================
+
+    fn liked_set_path(&self) -> PathBuf {
+        self.data_dir.join(LIKED_SET_FILE)
+    }
 
     fn replied_set_path(&self) -> PathBuf {
         self.data_dir.join(REPLIED_SET_FILE)
@@ -191,6 +198,75 @@ impl AutoReplyState {
         .await
         .ok();
     }
+
+    // ============================================================
+    //  liked_set 持久化管理
+    // ============================================================
+
+    /// 从磁盘加载已点赞集合
+    pub async fn load_liked_set(&self) {
+        let file_path = self.liked_set_path();
+        if !file_path.exists() {
+            return;
+        }
+
+        let json = match tokio::fs::read_to_string(&file_path).await {
+            Ok(content) => content,
+            Err(e) => {
+                log::warn!("读取已点赞集合失败: {}", e);
+                return;
+            }
+        };
+
+        let loaded: HashSet<String> = match serde_json::from_str(&json) {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!("解析已点赞集合失败: {}", e);
+                return;
+            }
+        };
+
+        let mut set = self.liked_set.write().await;
+        *set = loaded;
+        let count = set.len();
+        drop(set);
+        log::info!("已加载已点赞集合，共 {} 条记录", count);
+    }
+
+    /// 保存已点赞集合到磁盘
+    async fn persist_liked_set(&self) {
+        let set = self.liked_set.read().await;
+        let json = match serde_json::to_string(&*set) {
+            Ok(j) => j,
+            Err(e) => {
+                log::error!("序列化已点赞集合失败: {}", e);
+                return;
+            }
+        };
+        let file_path = self.liked_set_path();
+        if let Err(e) = tokio::fs::write(&file_path, json).await {
+            log::error!("保存已点赞集合到磁盘失败: {}", e);
+        }
+    }
+
+    /// 检查是否已点赞过
+    pub async fn is_liked(&self, key: &str) -> bool {
+        let set = self.liked_set.read().await;
+        set.contains(key)
+    }
+
+    /// 标记为已点赞（同时持久化到磁盘）
+    pub async fn mark_liked(&self, key: String) {
+        {
+            let mut set = self.liked_set.write().await;
+            if set.len() >= REPLIED_SET_MAX {
+                set.clear();
+                log::warn!("已点赞集合超过上限({})，已清空", REPLIED_SET_MAX);
+            }
+            set.insert(key);
+        }
+        self.persist_liked_set().await;
+    }
 }
 
 /// \u{5168}\u{5c40}\u{72b6}\u{6001}\u{7ba1}\u{7406}\u{5668}\u{5b9e}\u{4f8b}
@@ -207,6 +283,7 @@ pub async fn init_global_state() {
     };
     state.load_settings().await;
     state.load_replied_set().await;
+    state.load_liked_set().await;
     GLOBAL_STATE.get_or_init(|| state);
 }
 

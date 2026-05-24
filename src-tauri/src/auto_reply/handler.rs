@@ -49,6 +49,14 @@ pub trait MessageHandler: Send + Sync {
             let dedup_key = format!("{}:{}", self.source_type().id(), message.id);
 
             if settings.reply_only_once && state.is_replied(&dedup_key).await {
+                // 已回复过的评论仍需执行点赞
+                if settings.like_comments {
+                    let like_key = format!("like:{}:{}", self.source_type().id(), message.id);
+                    if !state.is_liked(&like_key).await {
+                        self.on_reply_success(account, &message, state).await;
+                        state.mark_liked(like_key).await;
+                    }
+                }
                 continue;
             }
 
@@ -88,7 +96,15 @@ pub trait MessageHandler: Send + Sync {
                     state.add_history(message.user_name.clone(), reply_text, self.source_type()).await;
                     result.success_count += 1;
 
-                    self.on_reply_success(account, &message, state).await;
+                    if settings.like_comments {
+                        let like_key = format!("like:{}:{}", self.source_type().id(), message.id);
+                        if !state.is_liked(&like_key).await {
+                            self.on_reply_success(account, &message, state).await;
+                            state.mark_liked(like_key).await;
+                        }
+                    } else {
+                        self.on_reply_success(account, &message, state).await;
+                    }
                 }
                 Err(e) => {
                     log::error!("{}\u{56de}\u{590d}\u{5931}\u{8d25}: {}", self.name(), e);
