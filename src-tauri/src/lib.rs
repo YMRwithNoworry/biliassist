@@ -14,18 +14,18 @@ async fn get_qr_code() -> Result<bilibili::QrCodeResponse, String> {
 
 #[tauri::command]
 async fn generate_qr_code(data: String) -> Result<String, String> {
-    let code = qrcode::QrCode::new(data).map_err(|e| format!("生成二维码失败: {}", e))?;
+    let code = qrcode::QrCode::new(data).map_err(|e| format!("\u{751f}\u{6210}\u{4e8c}\u{7ef4}\u{7801}\u{5931}\u{8d25}: {}", e))?;
     let image = code.render::<image::Luma<u8>>().build();
     let mut buffer = Vec::new();
     image.write_to(&mut std::io::Cursor::new(&mut buffer), image::ImageFormat::Png)
-        .map_err(|e| format!("编码PNG失败: {}", e))?;
+        .map_err(|e| format!("\u{7f16}\u{7801}PNG\u{5931}\u{8d25}: {}", e))?;
     Ok(general_purpose::STANDARD.encode(&buffer))
 }
 
 #[tauri::command]
 async fn verify_license(license_key: String) -> Result<String, String> {
     if license_key != "431paojiao" {
-        return Err("密钥错误".into());
+        return Err("\u{5bc6}\u{94a5}\u{9519}\u{8bef}".into());
     }
     Ok("ok".into())
 }
@@ -81,11 +81,11 @@ async fn manual_reply_video_comments() -> Result<String, String> {
 }
 
 // ============================================================
-//  开机自启
+//  \u{5f00}\u{673a}\u{81ea}\u{542f}
 // ============================================================
 
-/// 检测是否在开发模式下运行（非正式构建）
-/// 开发模式下启用自启动会导致开机时连接 localhost 失败
+/// \u{68c0}\u{6d4b}\u{662f}\u{5426}\u{5728}\u{5f00}\u{53d1}\u{6a21}\u{5f0f}\u{4e0b}\u{8fd0}\u{884c}\u{ff08}\u{975e}\u{6b63}\u{5f0f}\u{6784}\u{5efa}\u{ff09}
+/// \u{5f00}\u{53d1}\u{6a21}\u{5f0f}\u{4e0b}\u{542f}\u{7528}\u{81ea}\u{542f}\u{52a8}\u{4f1a}\u{5bfc}\u{81f4}\u{5f00}\u{673a}\u{65f6}\u{8fde}\u{63a5} localhost \u{5931}\u{8d25}
 fn is_dev_mode() -> bool {
     if std::env::var("TAURI_ENV_TAURI_DEV").is_ok() {
         return true;
@@ -110,7 +110,7 @@ async fn get_autostart_status(app: tauri::AppHandle) -> Result<bool, String> {
 async fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     use tauri_plugin_autostart::ManagerExt;
     if enabled && is_dev_mode() {
-        return Err("开发模式下无法启用开机自启，请先打包为正式版再使用此功能".into());
+        return Err("\u{5f00}\u{53d1}\u{6a21}\u{5f0f}\u{4e0b}\u{65e0}\u{6cd5}\u{542f}\u{7528}\u{5f00}\u{673a}\u{81ea}\u{542f}\u{ff0c}\u{8bf7}\u{5148}\u{6253}\u{5305}\u{4e3a}\u{6b63}\u{5f0f}\u{7248}\u{518d}\u{4f7f}\u{7528}\u{6b64}\u{529f}\u{80fd}".into());
     }
     if enabled {
         app.autolaunch().enable().map_err(|e| e.to_string())
@@ -119,7 +119,7 @@ async fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), Strin
     }
 }
 
-/// 显示主窗口（供托盘事件调用）
+/// \u{663e}\u{793a}\u{4e3b}\u{7a97}\u{53e3}\u{ff08}\u{4f9b}\u{6258}\u{76d8}\u{4e8b}\u{4ef6}\u{8c03}\u{7528}\u{ff09}
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -159,18 +159,18 @@ pub fn run() {
         .setup(|app| {
             let _handle = app.handle().clone();
 
-            // 检测是否由开机自启启动
+            // \u{68c0}\u{6d4b}\u{662f}\u{5426}\u{7531}\u{5f00}\u{673a}\u{81ea}\u{542f}\u{542f}\u{52a8}
             let is_autostart = std::env::args().any(|a| a == "--from-autostart");
             let is_dev = is_dev_mode();
             if is_autostart {
                 if is_dev {
-                    log::warn!("开发模式下由开机自启启动，前端无法加载，将显示窗口并自动禁用自启");
+                    log::warn!("\u{5f00}\u{53d1}\u{6a21}\u{5f0f}\u{4e0b}\u{7531}\u{5f00}\u{673a}\u{81ea}\u{542f}\u{542f}\u{52a8}\u{ff0c}\u{524d}\u{7aef}\u{65e0}\u{6cd5}\u{52a0}\u{8f7d}\u{ff0c}\u{5c06}\u{663e}\u{793a}\u{7a97}\u{53e3}\u{5e76}\u{81ea}\u{52a8}\u{7981}\u{7528}\u{81ea}\u{542f}");
                 } else {
-                    log::info!("应用由开机自启启动，将隐藏到系统托盘运行");
+                    log::info!("\u{5e94}\u{7528}\u{7531}\u{5f00}\u{673a}\u{81ea}\u{542f}\u{542f}\u{52a8}\u{ff0c}\u{5c06}\u{9690}\u{85cf}\u{5230}\u{7cfb}\u{7edf}\u{6258}\u{76d8}\u{8fd0}\u{884c}");
                 }
             }
 
-            // 初始化存储目录和自动回复
+            // \u{521d}\u{59cb}\u{5316}\u{5b58}\u{50a8}\u{76ee}\u{5f55}\u{548c}\u{81ea}\u{52a8}\u{56de}\u{590d}
             tauri::async_runtime::block_on(async {
                 storage::init().await;
                 auto_reply::init_settings().await;
@@ -179,34 +179,34 @@ pub fn run() {
                 });
             });
 
-            // 清理开发模式下的无效自启动注册
+            // \u{6e05}\u{7406}\u{5f00}\u{53d1}\u{6a21}\u{5f0f}\u{4e0b}\u{7684}\u{65e0}\u{6548}\u{81ea}\u{542f}\u{52a8}\u{6ce8}\u{518c}
             if is_autostart && is_dev {
                 use tauri_plugin_autostart::ManagerExt;
                 if let Err(e) = app.autolaunch().disable() {
-                    log::error!("清理开发模式自启注册失败: {}", e);
+                    log::error!("\u{6e05}\u{7406}\u{5f00}\u{53d1}\u{6a21}\u{5f0f}\u{81ea}\u{542f}\u{6ce8}\u{518c}\u{5931}\u{8d25}: {}", e);
                 } else {
-                    log::info!("已自动禁用开发模式下的开机自启");
+                    log::info!("\u{5df2}\u{81ea}\u{52a8}\u{7981}\u{7528}\u{5f00}\u{53d1}\u{6a21}\u{5f0f}\u{4e0b}\u{7684}\u{5f00}\u{673a}\u{81ea}\u{542f}");
                 }
             }
 
-            // 开机自启时先隐藏窗口，等用户点击托盘再显示
-            // 开发模式下不隐藏，因为前端依赖 Vite 开发服务器，隐藏后用户无法排查问题
+            // \u{5f00}\u{673a}\u{81ea}\u{542f}\u{65f6}\u{5148}\u{9690}\u{85cf}\u{7a97}\u{53e3}\u{ff0c}\u{7b49}\u{7528}\u{6237}\u{70b9}\u{51fb}\u{6258}\u{76d8}\u{518d}\u{663e}\u{793a}
+            // \u{5f00}\u{53d1}\u{6a21}\u{5f0f}\u{4e0b}\u{4e0d}\u{9690}\u{85cf}\u{ff0c}\u{56e0}\u{4e3a}\u{524d}\u{7aef}\u{4f9d}\u{8d56} Vite \u{5f00}\u{53d1}\u{670d}\u{52a1}\u{5668}\u{ff0c}\u{9690}\u{85cf}\u{540e}\u{7528}\u{6237}\u{65e0}\u{6cd5}\u{6392}\u{67e5}\u{95ee}\u{9898}
             if is_autostart && !is_dev {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.hide();
                 }
             }
 
-            // 创建系统托盘
-            let show_i = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)
-                .expect("创建菜单项失败");
-            let quit_i = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)
-                .expect("创建菜单项失败");
+            // \u{521b}\u{5efa}\u{7cfb}\u{7edf}\u{6258}\u{76d8}
+            let show_i = MenuItem::with_id(app, "show", "\u{663e}\u{793a}\u{7a97}\u{53e3}", true, None::<&str>)
+                .expect("\u{521b}\u{5efa}\u{83dc}\u{5355}\u{9879}\u{5931}\u{8d25}");
+            let quit_i = MenuItem::with_id(app, "quit", "\u{9000}\u{51fa}", true, None::<&str>)
+                .expect("\u{521b}\u{5efa}\u{83dc}\u{5355}\u{9879}\u{5931}\u{8d25}");
             let menu = Menu::with_items(app, &[&show_i, &quit_i])
-                .expect("创建菜单失败");
+                .expect("\u{521b}\u{5efa}\u{83dc}\u{5355}\u{5931}\u{8d25}");
 
             let img = image::load_from_memory(include_bytes!("../icons/32x32.png"))
-                .expect("加载图标失败")
+                .expect("\u{52a0}\u{8f7d}\u{56fe}\u{6807}\u{5931}\u{8d25}")
                 .into_rgba8();
             let (width, height) = img.dimensions();
             let rgba = img.into_raw();
@@ -233,7 +233,7 @@ pub fn run() {
                     }
                 })
                 .build(app)
-                .expect("创建系统托盘失败");
+                .expect("\u{521b}\u{5efa}\u{7cfb}\u{7edf}\u{6258}\u{76d8}\u{5931}\u{8d25}");
 
             Ok(())
         })

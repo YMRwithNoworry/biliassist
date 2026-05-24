@@ -3,7 +3,7 @@ use super::state::AutoReplyState;
 use crate::bilibili::UserInfo;
 use async_trait::async_trait;
 
-/// 消息结构
+/// \u{6d88}\u{606f}\u{7ed3}\u{6784}
 #[derive(Debug, Clone)]
 pub struct Message {
     pub id: String,
@@ -14,7 +14,7 @@ pub struct Message {
     pub extra_data: serde_json::Value,
 }
 
-/// 处理结果
+/// \u{5904}\u{7406}\u{7ed3}\u{679c}
 #[derive(Debug, Default)]
 pub struct HandleResult {
     pub success_count: u32,
@@ -22,7 +22,7 @@ pub struct HandleResult {
     pub stopped_by_rate_limit: bool,
 }
 
-/// 消息处理器 trait
+/// \u{6d88}\u{606f}\u{5904}\u{7406}\u{5668} trait
 #[async_trait]
 pub trait MessageHandler: Send + Sync {
     fn name(&self) -> &'static str;
@@ -52,27 +52,27 @@ pub trait MessageHandler: Send + Sync {
                 continue;
             }
 
-            // 历史记录回查（私信/关注降级保障）
+            // \u{5386}\u{53f2}\u{8bb0}\u{5f55}\u{56de}\u{67e5}\u{ff08}\u{79c1}\u{4fe1}/\u{5173}\u{6ce8}\u{964d}\u{7ea7}\u{4fdd}\u{969c}\u{ff09}
             if settings.reply_only_once && self.needs_history_fallback()
                 && state.is_replied_in_history(&message.user_id, &self.source_type()).await
             {
-                log::info!("历史记录回查命中，跳过已回复用户: {}", message.user_id);
-                // 同步到 replied_set 避免下次再查历史
+                log::info!("\u{5386}\u{53f2}\u{8bb0}\u{5f55}\u{56de}\u{67e5}\u{547d}\u{4e2d}\u{ff0c}\u{8df3}\u{8fc7}\u{5df2}\u{56de}\u{590d}\u{7528}\u{6237}: {}", message.user_id);
+                // \u{540c}\u{6b65}\u{5230} replied_set \u{907f}\u{514d}\u{4e0b}\u{6b21}\u{518d}\u{67e5}\u{5386}\u{53f2}
                 state.mark_replied(dedup_key).await;
                 continue;
             }
 
-            // 生成回复内容：优先使用 AI，否则使用模板
+            // \u{751f}\u{6210}\u{56de}\u{590d}\u{5185}\u{5bb9}\u{ff1a}\u{4f18}\u{5148}\u{4f7f}\u{7528} AI\u{ff0c}\u{5426}\u{5219}\u{4f7f}\u{7528}\u{6a21}\u{677f}
             let reply_text = if settings.ai.enabled {
                 let source_name = self.source_type().display_name();
                 let msg_content = message.content.as_deref().unwrap_or("");
                 match super::ai::generate_reply(&settings.ai, &message.user_name, msg_content, source_name).await {
                     Ok(ai_reply) => {
-                        log::info!("AI 生成回复成功: user={}, reply={}", message.user_name, ai_reply);
+                        log::info!("AI \u{751f}\u{6210}\u{56de}\u{590d}\u{6210}\u{529f}: user={}, reply={}", message.user_name, ai_reply);
                         ai_reply
                     }
                     Err(e) => {
-                        log::warn!("AI 生成回复失败，回退到模板: {}", e);
+                        log::warn!("AI \u{751f}\u{6210}\u{56de}\u{590d}\u{5931}\u{8d25}\u{ff0c}\u{56de}\u{9000}\u{5230}\u{6a21}\u{677f}: {}", e);
                         format_message(&settings.message, &message.user_name)
                     }
                 }
@@ -91,7 +91,7 @@ pub trait MessageHandler: Send + Sync {
                     self.on_reply_success(account, &message, state).await;
                 }
                 Err(e) => {
-                    log::error!("{}回复失败: {}", self.name(), e);
+                    log::error!("{}\u{56de}\u{590d}\u{5931}\u{8d25}: {}", self.name(), e);
                     result.error_count += 1;
 
                     if is_rate_limit_error(&e) {
@@ -108,23 +108,23 @@ pub trait MessageHandler: Send + Sync {
     }
 }
 
-/// 格式化消息
+/// \u{683c}\u{5f0f}\u{5316}\u{6d88}\u{606f}
 pub fn format_message(template: &str, username: &str) -> String {
     use chrono::{FixedOffset, TimeZone};
     let beijing_now = FixedOffset::east_opt(8 * 3600)
         .unwrap()
         .from_utc_datetime(&chrono::Utc::now().naive_utc());
     template
-        .replace("{用户名}", username)
-        .replace("{时间}", &beijing_now.format("%Y-%m-%d %H:%M:%S").to_string())
+        .replace("{\u{7528}\u{6237}\u{540d}}", username)
+        .replace("{\u{65f6}\u{95f4}}", &beijing_now.format("%Y-%m-%d %H:%M:%S").to_string())
 }
 
-/// 判断是否为风控错误
+/// \u{5224}\u{65ad}\u{662f}\u{5426}\u{4e3a}\u{98ce}\u{63a7}\u{9519}\u{8bef}
 pub fn is_rate_limit_error(error: &str) -> bool {
-    error.contains("banned") || error.contains("频繁")
+    error.contains("banned") || error.contains("\u{9891}\u{7e41}")
 }
 
-/// 生成设备ID (dev_id)
+/// \u{751f}\u{6210}\u{8bbe}\u{5907}ID (dev_id)
 pub fn generate_dev_id() -> String {
     let mut result = String::with_capacity(36);
     let mut rng = rand::thread_rng();
@@ -146,7 +146,7 @@ pub fn generate_dev_id() -> String {
     result
 }
 
-/// 消息处理器注册表
+/// \u{6d88}\u{606f}\u{5904}\u{7406}\u{5668}\u{6ce8}\u{518c}\u{8868}
 pub struct HandlerRegistry {
     handlers: Vec<Box<dyn MessageHandler>>,
 }

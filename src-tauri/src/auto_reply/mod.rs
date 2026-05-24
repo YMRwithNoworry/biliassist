@@ -13,7 +13,7 @@ pub use state::get_global_state;
 
 use handler::HandlerRegistry;
 
-/// 自动回复服务
+/// \u{81ea}\u{52a8}\u{56de}\u{590d}\u{670d}\u{52a1}
 pub struct AutoReplyService {
     registry: HandlerRegistry,
 }
@@ -28,7 +28,7 @@ impl AutoReplyService {
     }
 
     pub async fn start(&self) {
-        log::info!("自动回复服务启动");
+        log::info!("\u{81ea}\u{52a8}\u{56de}\u{590d}\u{670d}\u{52a1}\u{542f}\u{52a8}");
 
         loop {
             let state = get_global_state();
@@ -44,7 +44,7 @@ impl AutoReplyService {
                     let account = match crate::storage::get_active_account().await {
                         Some(acc) => acc,
                         None => {
-                            log::warn!("没有激活的账号");
+                            log::warn!("\u{6ca1}\u{6709}\u{6fc0}\u{6d3b}\u{7684}\u{8d26}\u{53f7}");
                             continue;
                         }
                     };
@@ -53,12 +53,12 @@ impl AutoReplyService {
                     let has_bili_jct = account.cookie.contains("bili_jct=");
                     let has_dede = account.cookie.contains("DedeUserID=");
                     log::info!(
-                        "账号 cookie 诊断: len={}, SESSDATA={}, bili_jct={}, DedeUserID={}",
+                        "\u{8d26}\u{53f7} cookie \u{8bca}\u{65ad}: len={}, SESSDATA={}, bili_jct={}, DedeUserID={}",
                         account.cookie.len(), has_sessdata, has_bili_jct, has_dede
                     );
 
                     if !has_sessdata || !has_bili_jct {
-                        log::error!("cookie 不完整（缺少 SESSDATA 或 bili_jct），请删除账号重新扫码登录");
+                        log::error!("cookie \u{4e0d}\u{5b8c}\u{6574}\u{ff08}\u{7f3a}\u{5c11} SESSDATA \u{6216} bili_jct\u{ff09}\u{ff0c}\u{8bf7}\u{5220}\u{9664}\u{8d26}\u{53f7}\u{91cd}\u{65b0}\u{626b}\u{7801}\u{767b}\u{5f55}");
                         continue;
                     }
 
@@ -66,18 +66,18 @@ impl AutoReplyService {
                         Ok(result) => {
                             if result.success_count > 0 || result.error_count > 0 {
                                 log::info!(
-                                    "{} 处理完成: 成功={}, 失败={}",
+                                    "{} \u{5904}\u{7406}\u{5b8c}\u{6210}: \u{6210}\u{529f}={}, \u{5931}\u{8d25}={}",
                                     handler.name(),
                                     result.success_count,
                                     result.error_count
                                 );
                             }
                             if result.stopped_by_rate_limit {
-                                log::warn!("{} 触发风控限制，停止处理", handler.name());
+                                log::warn!("{} \u{89e6}\u{53d1}\u{98ce}\u{63a7}\u{9650}\u{5236}\u{ff0c}\u{505c}\u{6b62}\u{5904}\u{7406}", handler.name());
                             }
                         }
                         Err(e) => {
-                            log::error!("{} 处理失败: {}", handler.name(), e);
+                            log::error!("{} \u{5904}\u{7406}\u{5931}\u{8d25}: {}", handler.name(), e);
                         }
                     }
                 }
@@ -96,7 +96,7 @@ impl AutoReplyService {
         let settings = state.get_settings().await;
         let account = crate::storage::get_active_account()
             .await
-            .ok_or("没有激活的账号")?;
+            .ok_or("\u{6ca1}\u{6709}\u{6fc0}\u{6d3b}\u{7684}\u{8d26}\u{53f7}")?;
 
         let sources = if let Some(s) = source {
             vec![s]
@@ -111,14 +111,14 @@ impl AutoReplyService {
                 match handler.handle(&account, state).await {
                     Ok(result) => {
                         results.push(format!(
-                            "{}: 成功{}条 失败{}条",
+                            "{}: \u{6210}\u{529f}{}\u{6761} \u{5931}\u{8d25}{}\u{6761}",
                             handler.name(),
                             result.success_count,
                             result.error_count
                         ));
                     }
                     Err(e) => {
-                        results.push(format!("{}: 失败 - {}", handler.name(), e));
+                        results.push(format!("{}: \u{5931}\u{8d25} - {}", handler.name(), e));
                     }
                 }
             }
@@ -135,7 +135,7 @@ impl Default for AutoReplyService {
 }
 
 // ============================================================
-//  向后兼容的公开 API 函数
+//  \u{5411}\u{540e}\u{517c}\u{5bb9}\u{7684}\u{516c}\u{5f00} API \u{51fd}\u{6570}
 // ============================================================
 
 pub async fn init_settings() {
@@ -156,8 +156,8 @@ pub async fn save_settings(new_settings: AutoReplySettings) -> Result<(), String
 pub async fn test_reply() -> Result<String, String> {
     let state = get_global_state();
     let settings = state.get_settings().await;
-    let formatted = handler::format_message(&settings.message, "测试用户");
-    Ok(format!("测试回复内容:\n{}", formatted))
+    let formatted = handler::format_message(&settings.message, "\u{6d4b}\u{8bd5}\u{7528}\u{6237}");
+    Ok(format!("\u{6d4b}\u{8bd5}\u{56de}\u{590d}\u{5185}\u{5bb9}:\n{}", formatted))
 }
 
 pub async fn test_ai_reply() -> Result<String, String> {
