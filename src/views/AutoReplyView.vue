@@ -158,7 +158,7 @@
               placeholder="gpt-4o-mini"
               @blur="save"
             />
-            <div class="field-hint">例如 deepseek-chat、gpt-4o-mini、qwen2.5:7b 等</div>
+            <div class="field-hint">例如 deepseek-v4-flash、gpt-4o-mini、qwen2.5:7b 等</div>
           </div>
 
           <div class="form-field">
@@ -384,7 +384,7 @@ const aiTestError = ref(false)
 
 const applyPreset = (provider) => {
   const presets = {
-    deepseek: { baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' },
+    deepseek: { baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash' },
     openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
     ollama: { baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5:7b' },
   }
