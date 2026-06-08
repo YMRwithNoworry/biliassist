@@ -34,6 +34,8 @@ jobs:
 
       - name: 配置 Pages
         uses: actions/configure-pages@v4
+        with:
+          enablement: true
 
       - name: 上传资源
         uses: actions/upload-pages-artifact@v3
