@@ -22,8 +22,12 @@ impl AutoReplyState {
             .ok_or("\u{65e0}\u{6cd5}\u{83b7}\u{53d6}\u{7528}\u{6237}\u{76ee}\u{5f55}")?
             .join(".bilibili_account_manager");
 
-        std::fs::create_dir_all(&data_dir)
-            .map_err(|e| format!("\u{521b}\u{5efa}\u{6570}\u{636e}\u{76ee}\u{5f55}\u{5931}\u{8d25}: {}", e))?;
+        std::fs::create_dir_all(&data_dir).map_err(|e| {
+            format!(
+                "\u{521b}\u{5efa}\u{6570}\u{636e}\u{76ee}\u{5f55}\u{5931}\u{8d25}: {}",
+                e
+            )
+        })?;
 
         Ok(Self {
             settings: Arc::new(RwLock::new(AutoReplySettings::default())),
@@ -76,13 +80,19 @@ impl AutoReplyState {
         let json = match serde_json::to_string(&*settings) {
             Ok(j) => j,
             Err(e) => {
-                log::error!("\u{5e8f}\u{5217}\u{5316}\u{8bbe}\u{7f6e}\u{5931}\u{8d25}: {}", e);
+                log::error!(
+                    "\u{5e8f}\u{5217}\u{5316}\u{8bbe}\u{7f6e}\u{5931}\u{8d25}: {}",
+                    e
+                );
                 return;
             }
         };
         let file_path = self.data_dir.join("auto_reply_settings.json");
         if let Err(e) = tokio::fs::write(&file_path, json).await {
-            log::error!("\u{4fdd}\u{5b58}\u{8bbe}\u{7f6e}\u{5230}\u{6587}\u{4ef6}\u{5931}\u{8d25}: {}", e);
+            log::error!(
+                "\u{4fdd}\u{5b58}\u{8bbe}\u{7f6e}\u{5230}\u{6587}\u{4ef6}\u{5931}\u{8d25}: {}",
+                e
+            );
         }
     }
 
@@ -125,7 +135,10 @@ impl AutoReplyState {
         let json = match tokio::fs::read_to_string(&file_path).await {
             Ok(content) => content,
             Err(e) => {
-                log::warn!("\u{8bfb}\u{53d6}\u{5df2}\u{56de}\u{590d}\u{96c6}\u{5408}\u{5931}\u{8d25}: {}", e);
+                log::warn!(
+                    "\u{8bfb}\u{53d6}\u{5df2}\u{56de}\u{590d}\u{96c6}\u{5408}\u{5931}\u{8d25}: {}",
+                    e
+                );
                 return;
             }
         };
@@ -133,7 +146,10 @@ impl AutoReplyState {
         let loaded: HashSet<String> = match serde_json::from_str(&json) {
             Ok(s) => s,
             Err(e) => {
-                log::warn!("\u{89e3}\u{6790}\u{5df2}\u{56de}\u{590d}\u{96c6}\u{5408}\u{5931}\u{8d25}: {}", e);
+                log::warn!(
+                    "\u{89e3}\u{6790}\u{5df2}\u{56de}\u{590d}\u{96c6}\u{5408}\u{5931}\u{8d25}: {}",
+                    e
+                );
                 return;
             }
         };
@@ -183,7 +199,10 @@ impl AutoReplyState {
     /// \u{4ece}\u{5386}\u{53f2}\u{8bb0}\u{5f55}\u{4e2d}\u{68c0}\u{67e5}\u{662f}\u{5426}\u{5df2}\u{56de}\u{590d}\u{8fc7}\u{67d0}\u{7528}\u{6237}\u{ff08}\u{9488}\u{5bf9}\u{79c1}\u{4fe1}/\u{5173}\u{6ce8}\u{7684}\u{964d}\u{7ea7}\u{4fdd}\u{969c}\u{ff09}
     pub async fn is_replied_in_history(&self, user_identifier: &str, source: &MsgSource) -> bool {
         let settings = self.settings.read().await;
-        settings.history.iter().any(|h| h.user == user_identifier && h.source == *source)
+        settings
+            .history
+            .iter()
+            .any(|h| h.user == user_identifier && h.source == *source)
     }
 
     /// \u{6dfb}\u{52a0}\u{56de}\u{590d}\u{5386}\u{53f2}\u{8bb0}\u{5f55}
@@ -266,6 +285,52 @@ impl AutoReplyState {
             set.insert(key);
         }
         self.persist_liked_set().await;
+    }
+
+    // ============================================================
+    //  云同步导入导出
+    // ============================================================
+
+    /// 获取已回复集合的快照
+    pub async fn get_replied_set_snapshot(&self) -> Vec<String> {
+        let set = self.replied_set.read().await;
+        set.iter().cloned().collect()
+    }
+
+    /// 获取已点赞集合的快照
+    pub async fn get_liked_set_snapshot(&self) -> Vec<String> {
+        let set = self.liked_set.read().await;
+        set.iter().cloned().collect()
+    }
+
+    /// 合并导入已回复集合（并集，不覆盖已有记录）
+    pub async fn merge_replied_set(&self, entries: Vec<String>) {
+        let mut set = self.replied_set.write().await;
+        let before = set.len();
+        for key in entries {
+            set.insert(key);
+        }
+        let added = set.len().saturating_sub(before);
+        drop(set);
+        if added > 0 {
+            self.persist_replied_set().await;
+            log::info!("合并已回复集合，新增 {} 条记录", added);
+        }
+    }
+
+    /// 合并导入已点赞集合（并集，不覆盖已有记录）
+    pub async fn merge_liked_set(&self, entries: Vec<String>) {
+        let mut set = self.liked_set.write().await;
+        let before = set.len();
+        for key in entries {
+            set.insert(key);
+        }
+        let added = set.len().saturating_sub(before);
+        drop(set);
+        if added > 0 {
+            self.persist_liked_set().await;
+            log::info!("合并已点赞集合，新增 {} 条记录", added);
+        }
     }
 }
 

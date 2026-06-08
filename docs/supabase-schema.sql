@@ -45,11 +45,22 @@ CREATE TABLE IF NOT EXISTS user_tiers (
 );
 CREATE INDEX IF NOT EXISTS idx_user_tiers_user_id ON user_tiers(user_id);
 
+-- 3c. 自动化状态同步表（已回复集合 + 已点赞集合）
+CREATE TABLE IF NOT EXISTS automation_state (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE,
+  replied_set JSONB NOT NULL DEFAULT '[]',
+  liked_set JSONB NOT NULL DEFAULT '[]',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_automation_state_user_id ON automation_state(user_id);
+
 -- 4. 启用 Row Level Security
 ALTER TABLE bilibili_accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE auto_reply_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_tiers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE automation_state ENABLE ROW LEVEL SECURITY;
 
 -- 5. RLS 策略：用户只能操作自己的数据
 CREATE POLICY "用户只能查看自己的 B站账号" ON bilibili_accounts
@@ -85,6 +96,16 @@ CREATE POLICY "用户只能插入自己的支付记录" ON payments
 CREATE POLICY "用户只能查看自己的等级" ON user_tiers
   FOR SELECT USING (auth.uid() = user_id);
 
+-- 自动化状态 RLS
+CREATE POLICY "用户只能查看自己的自动化状态" ON automation_state
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "用户只能插入自己的自动化状态" ON automation_state
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "用户只能更新自己的自动化状态" ON automation_state
+  FOR UPDATE USING (auth.uid() = user_id);
+
 -- 6. 自动更新 updated_at 的触发器
 CREATE OR REPLACE FUNCTION update_updated_at()
 RETURNS TRIGGER AS $$
@@ -108,4 +129,8 @@ CREATE TRIGGER payments_updated_at
 
 CREATE TRIGGER user_tiers_updated_at
   BEFORE UPDATE ON user_tiers
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+CREATE TRIGGER automation_state_updated_at
+  BEFORE UPDATE ON automation_state
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();

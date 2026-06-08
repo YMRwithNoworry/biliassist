@@ -26,7 +26,7 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
           </svg>
-          <span class="sync-label">云同步</span>
+          <span class="sync-label">全量数据同步</span>
           <span class="sync-user" v-if="authEmail">{{ authEmail }}</span>
         </div>
         <div class="sync-actions">
@@ -214,13 +214,6 @@ const uploadToCloud = async () => {
   syncMsg.value = ''
 
   try {
-    const localAccounts = await invoke('get_accounts')
-    if (!Array.isArray(localAccounts) || localAccounts.length === 0) {
-      showSyncMsg('没有可上传的 B站账号', 'error')
-      syncing.value = false
-      return
-    }
-
     if (!auth.isAuthenticated) {
       showSyncMsg('请先登录应用账号', 'error')
       syncing.value = false
@@ -234,26 +227,51 @@ const uploadToCloud = async () => {
       return
     }
 
-    const rows = localAccounts.map(a => ({
-      user_id: userId,
-      uid: a.uid,
-      name: a.name,
-      avatar: a.avatar || '',
-      cookie: a.cookie || '',
-      active: a.active || false,
-      created_at: a.createdAt || new Date().toISOString()
-    }))
+    // 1. 上传 B站账号
+    const localAccounts = await invoke('get_accounts')
+    if (Array.isArray(localAccounts) && localAccounts.length > 0) {
+      const rows = localAccounts.map(a => ({
+        user_id: userId,
+        uid: a.uid,
+        name: a.name,
+        avatar: a.avatar || '',
+        cookie: a.cookie || '',
+        active: a.active || false,
+        created_at: a.createdAt || new Date().toISOString()
+      }))
 
-    const { error } = await supabase
-      .from('bilibili_accounts')
-      .upsert(rows, {
-        onConflict: 'user_id,uid',
-        ignoreDuplicates: false
-      })
+      const { error: accErr } = await supabase
+        .from('bilibili_accounts')
+        .upsert(rows, {
+          onConflict: 'user_id,uid',
+          ignoreDuplicates: false
+        })
+      if (accErr) throw accErr
+    }
 
-    if (error) throw error
+    // 2. 上传自动回复设置
+    const settings = await invoke('get_auto_reply_settings')
+    const { error: settingsErr } = await supabase
+      .from('auto_reply_settings')
+      .upsert({
+        user_id: userId,
+        settings: settings
+      }, { onConflict: 'user_id' })
+    if (settingsErr) throw settingsErr
 
-    showSyncMsg(`已上传 ${rows.length} 个 B站账号`, 'success')
+    // 3. 上传已回复集合和已点赞集合
+    const repliedSet = await invoke('get_replied_set')
+    const likedSet = await invoke('get_liked_set')
+    const { error: stateErr } = await supabase
+      .from('automation_state')
+      .upsert({
+        user_id: userId,
+        replied_set: repliedSet,
+        liked_set: likedSet
+      }, { onConflict: 'user_id' })
+    if (stateErr) throw stateErr
+
+    showSyncMsg('所有数据已上传到云端', 'success')
   } catch (e) {
     showSyncMsg(`上传失败: ${e.message || e}`, 'error')
     console.error('上传失败:', e)
@@ -281,33 +299,66 @@ const downloadFromCloud = async () => {
       return
     }
 
-    const { data, error } = await supabase
+    let downloadedCount = 0
+
+    // 1. 下载 B站账号
+    const { data: accData, error: accErr } = await supabase
       .from('bilibili_accounts')
       .select('uid, name, avatar, cookie, active, created_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: true })
 
-    if (error) throw error
+    if (accErr) throw accErr
 
-    if (!data || data.length === 0) {
-      showSyncMsg('云端没有找到 B站账号', 'error')
-      syncing.value = false
-      return
+    if (accData && accData.length > 0) {
+      const accounts = accData.map(a => ({
+        uid: a.uid,
+        name: a.name,
+        avatar: a.avatar || '',
+        cookie: a.cookie || '',
+        active: a.active || false,
+        createdAt: a.created_at || new Date().toISOString()
+      }))
+      await invoke('sync_accounts', { accounts })
+      downloadedCount += accounts.length
     }
 
-    const accounts = data.map(a => ({
-      uid: a.uid,
-      name: a.name,
-      avatar: a.avatar || '',
-      cookie: a.cookie || '',
-      active: a.active || false,
-      createdAt: a.created_at || new Date().toISOString()
-    }))
+    // 2. 下载自动回复设置
+    const { data: settingsData, error: settingsErr } = await supabase
+      .from('auto_reply_settings')
+      .select('settings')
+      .eq('user_id', userId)
+      .maybeSingle()
 
-    await invoke('sync_accounts', { accounts })
+    if (settingsErr) throw settingsErr
+
+    if (settingsData?.settings) {
+      await invoke('save_auto_reply_settings', { settings: settingsData.settings })
+      downloadedCount++
+    }
+
+    // 3. 下载已回复/已点赞集合
+    const { data: stateData, error: stateErr } = await supabase
+      .from('automation_state')
+      .select('replied_set, liked_set')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (stateErr) throw stateErr
+
+    if (stateData) {
+      if (Array.isArray(stateData.replied_set) && stateData.replied_set.length > 0) {
+        await invoke('merge_replied_set', { entries: stateData.replied_set })
+        downloadedCount++
+      }
+      if (Array.isArray(stateData.liked_set) && stateData.liked_set.length > 0) {
+        await invoke('merge_liked_set', { entries: stateData.liked_set })
+        downloadedCount++
+      }
+    }
+
     await loadAccounts()
-
-    showSyncMsg(`已下载 ${accounts.length} 个 B站账号`, 'success')
+    showSyncMsg(downloadedCount > 0 ? `已从云端同步 ${downloadedCount} 项数据` : '云端没有找到数据', downloadedCount > 0 ? 'success' : 'error')
   } catch (e) {
     showSyncMsg(`下载失败: ${e.message || e}`, 'error')
     console.error('下载失败:', e)

@@ -208,7 +208,40 @@ jobs:
         run: npm ci
 
       - name: 构建应用
-        continue-on-error: ${{ matrix.platform == 'ubuntu-22.04' }}
+        id: build_app
+        continue-on-error: ${{ matrix.platform == 'ubuntu-22.04' || matrix.platform == 'windows-latest' }}
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ needs.version.outputs.tag_name }}
+          releaseName: ${{ needs.version.outputs.release_name }}
+          releaseBody: "构建进行中… 稍后将更新变更日志"
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      - name: 重试 Windows 构建（NSIS 下载 504 兼容，第 1 次）
+        id: retry_windows_build_1
+        if: steps.build_app.outcome == 'failure' && matrix.platform == 'windows-latest'
+        continue-on-error: true
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ needs.version.outputs.tag_name }}
+          releaseName: ${{ needs.version.outputs.release_name }}
+          releaseBody: "构建进行中… 稍后将更新变更日志"
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      - name: 重试 Windows 构建（NSIS 下载 504 兼容，第 2 次）
+        if: steps.build_app.outcome == 'failure' && steps.retry_windows_build_1.outcome == 'failure' && matrix.platform == 'windows-latest'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -223,7 +256,7 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: 重试 AppImage（Linux 502 兼容）
-        if: failure() && matrix.platform == 'ubuntu-22.04'
+        if: steps.build_app.outcome == 'failure' && matrix.platform == 'ubuntu-22.04'
         run: |
           echo "首次构建时下载 AppRun 失败(502)，重试 AppImage 打包..."
           cd src-tauri

@@ -27,8 +27,12 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { RouterView } from 'vue-router'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { listen } from '@tauri-apps/api/event'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 
+const router = useRouter()
+const auth = useAuthStore()
 const initialLoading = ref(true)
 const initError = ref('')
 let mounted = false
@@ -70,6 +74,27 @@ onMounted(async () => {
   mounted = true
   await initSession()
   if (mounted) initialLoading.value = false
+
+  // 监听 Tauri deep-link OAuth 回调事件
+  try {
+    const unlistenOAuth = await listen('oauth-callback', async (event) => {
+      console.log('[App] 收到 OAuth 回调:', event.payload)
+      const callbackUrl = event.payload
+      if (callbackUrl && typeof callbackUrl === 'string') {
+        const success = await auth.handleOAuthCallback(callbackUrl)
+        if (success) {
+          initialLoading.value = false
+          router.push('/')
+        } else {
+          initError.value = 'GitHub 登录失败，请重试'
+          initialLoading.value = false
+        }
+      }
+    })
+    onUnmounted(unlistenOAuth)
+  } catch (e) {
+    console.warn('[App] OAuth 回调监听注册失败:', e)
+  }
 
   // 监听窗口显示事件（从托盘恢复时自动重试）
   try {

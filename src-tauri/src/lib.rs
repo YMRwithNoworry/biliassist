@@ -1,11 +1,14 @@
+mod auto_reply;
 mod bilibili;
 mod storage;
-mod auto_reply;
 
-use tauri::Manager;
+use base64::{engine::general_purpose, Engine};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use base64::{Engine, engine::general_purpose};
+use tauri::Emitter;
+use tauri::Listener;
+use tauri::Manager;
+use tauri_plugin_deep_link::DeepLinkExt;
 
 #[tauri::command]
 async fn get_qr_code() -> Result<bilibili::QrCodeResponse, String> {
@@ -14,10 +17,19 @@ async fn get_qr_code() -> Result<bilibili::QrCodeResponse, String> {
 
 #[tauri::command]
 async fn generate_qr_code(data: String) -> Result<String, String> {
-    let code = qrcode::QrCode::new(data).map_err(|e| format!("\u{751f}\u{6210}\u{4e8c}\u{7ef4}\u{7801}\u{5931}\u{8d25}: {}", e))?;
+    let code = qrcode::QrCode::new(data).map_err(|e| {
+        format!(
+            "\u{751f}\u{6210}\u{4e8c}\u{7ef4}\u{7801}\u{5931}\u{8d25}: {}",
+            e
+        )
+    })?;
     let image = code.render::<image::Luma<u8>>().build();
     let mut buffer = Vec::new();
-    image.write_to(&mut std::io::Cursor::new(&mut buffer), image::ImageFormat::Png)
+    image
+        .write_to(
+            &mut std::io::Cursor::new(&mut buffer),
+            image::ImageFormat::Png,
+        )
         .map_err(|e| format!("\u{7f16}\u{7801}PNG\u{5931}\u{8d25}: {}", e))?;
     Ok(general_purpose::STANDARD.encode(&buffer))
 }
@@ -63,6 +75,26 @@ async fn get_auto_reply_settings() -> Result<auto_reply::AutoReplySettings, Stri
 #[tauri::command]
 async fn save_auto_reply_settings(settings: auto_reply::AutoReplySettings) -> Result<(), String> {
     auto_reply::save_settings(settings).await
+}
+
+#[tauri::command]
+async fn get_replied_set() -> Result<Vec<String>, String> {
+    auto_reply::get_replied_set().await
+}
+
+#[tauri::command]
+async fn get_liked_set() -> Result<Vec<String>, String> {
+    auto_reply::get_liked_set().await
+}
+
+#[tauri::command]
+async fn merge_replied_set(entries: Vec<String>) -> Result<(), String> {
+    auto_reply::merge_replied_set(entries).await
+}
+
+#[tauri::command]
+async fn merge_liked_set(entries: Vec<String>) -> Result<(), String> {
+    auto_reply::merge_liked_set(entries).await
 }
 
 #[tauri::command]
@@ -134,6 +166,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(
             tauri_plugin_autostart::Builder::new()
                 .args(["--from-autostart"])
@@ -150,6 +183,10 @@ pub fn run() {
             delete_account,
             get_auto_reply_settings,
             save_auto_reply_settings,
+            get_replied_set,
+            get_liked_set,
+            merge_replied_set,
+            merge_liked_set,
             test_auto_reply,
             test_ai_reply,
             manual_reply_video_comments,
@@ -158,6 +195,24 @@ pub fn run() {
         ])
         .setup(|app| {
             let _handle = app.handle().clone();
+
+            // 注册 deep-link 用于 GitHub OAuth 回调
+            #[cfg(desktop)]
+            {
+                match app.deep_link().register_all() {
+                    Ok(()) => log::info!("Deep-link 协议注册成功"),
+                    Err(e) => log::warn!("Deep-link 协议注册失败 (可能需要管理员权限或已在运行): {}", e),
+                }
+            }
+
+            // 监听 deep-link 事件，将回调 URL 传给前端
+            let app_handle = app.handle().clone();
+            app.listen("deep-link://request", move |event| {
+                log::info!("收到 deep-link 回调: {:?}", event.payload());
+                let url = event.payload();
+                let _ = app_handle.emit("oauth-callback", url.to_string());
+                show_main_window(&app_handle);
+            });
 
             // \u{68c0}\u{6d4b}\u{662f}\u{5426}\u{7531}\u{5f00}\u{673a}\u{81ea}\u{542f}\u{542f}\u{52a8}
             let is_autostart = std::env::args().any(|a| a == "--from-autostart");

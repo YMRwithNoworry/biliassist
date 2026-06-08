@@ -1,14 +1,14 @@
-pub mod models;
-pub mod state;
-pub mod wbi;
-pub mod http;
-pub mod handler;
+pub mod ai;
 pub mod comment;
 pub mod direct_message;
 pub mod follow;
-pub mod ai;
+pub mod handler;
+pub mod http;
+pub mod models;
+pub mod state;
+pub mod wbi;
 
-pub use models::{AutoReplySettings, MsgSource, AiReplyConfig};
+pub use models::{AiReplyConfig, AutoReplySettings, MsgSource};
 pub use state::get_global_state;
 
 use handler::HandlerRegistry;
@@ -77,7 +77,11 @@ impl AutoReplyService {
                             }
                         }
                         Err(e) => {
-                            log::error!("{} \u{5904}\u{7406}\u{5931}\u{8d25}: {}", handler.name(), e);
+                            log::error!(
+                                "{} \u{5904}\u{7406}\u{5931}\u{8d25}: {}",
+                                handler.name(),
+                                e
+                            );
                         }
                     }
                 }
@@ -157,7 +161,10 @@ pub async fn test_reply() -> Result<String, String> {
     let state = get_global_state();
     let settings = state.get_settings().await;
     let formatted = handler::format_message(&settings.message, "\u{6d4b}\u{8bd5}\u{7528}\u{6237}");
-    Ok(format!("\u{6d4b}\u{8bd5}\u{56de}\u{590d}\u{5185}\u{5bb9}:\n{}", formatted))
+    Ok(format!(
+        "\u{6d4b}\u{8bd5}\u{56de}\u{590d}\u{5185}\u{5bb9}:\n{}",
+        formatted
+    ))
 }
 
 pub async fn test_ai_reply() -> Result<String, String> {
@@ -174,4 +181,30 @@ pub async fn manual_reply_comments() -> Result<String, String> {
 pub async fn start_auto_reply_service() {
     let service = AutoReplyService::new();
     service.start().await;
+}
+
+// ============================================================
+//  云同步导出/导入 API
+// ============================================================
+
+pub async fn get_replied_set() -> Result<Vec<String>, String> {
+    let state = get_global_state();
+    Ok(state.get_replied_set_snapshot().await)
+}
+
+pub async fn get_liked_set() -> Result<Vec<String>, String> {
+    let state = get_global_state();
+    Ok(state.get_liked_set_snapshot().await)
+}
+
+pub async fn merge_replied_set(entries: Vec<String>) -> Result<(), String> {
+    let state = get_global_state();
+    state.merge_replied_set(entries).await;
+    Ok(())
+}
+
+pub async fn merge_liked_set(entries: Vec<String>) -> Result<(), String> {
+    let state = get_global_state();
+    state.merge_liked_set(entries).await;
+    Ok(())
 }

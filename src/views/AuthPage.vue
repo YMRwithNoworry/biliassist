@@ -15,6 +15,22 @@
 
       <!-- Auth Card -->
       <div class="auth-card">
+        <!-- GitHub Login -->
+        <button
+          class="btn btn-github btn-block"
+          :disabled="auth.githubLoading"
+          @click="handleGitHubLogin"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+          </svg>
+          {{ auth.githubLoading ? '正在打开浏览器...' : '使用 GitHub 登录' }}
+        </button>
+
+        <div class="auth-divider">
+          <span class="auth-divider-text">或使用邮箱</span>
+        </div>
+
         <!-- Tabs -->
         <div class="auth-tabs">
           <button
@@ -323,6 +339,17 @@ const verifyOtpCode = async () => {
     error.value = e.message || '验证码错误或已过期'
   } finally {
     verifying.value = false
+  }
+}
+
+const handleGitHubLogin = async () => {
+  error.value = ''
+  success.value = ''
+  try {
+    await auth.signInWithGitHub()
+    success.value = '已在浏览器中打开 GitHub 登录页面，完成登录后应用将自动跳转'
+  } catch (e) {
+    error.value = e.message || 'GitHub 登录失败'
   }
 }
 
@@ -693,6 +720,45 @@ const handlePasswordAction = async () => {
   font-size: 12px;
   color: #6E7681;
   margin: 24px 0 0 0;
+}
+
+/* GitHub Button */
+.btn-github {
+  background-color: #21262D;
+  border-color: #30363D;
+  color: #E6EDF3;
+}
+
+.btn-github:hover:not(:disabled) {
+  background-color: #30363D;
+  border-color: #484F58;
+}
+
+.btn-github:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Divider */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  margin: 20px 0;
+  gap: 12px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background-color: #30363D;
+}
+
+.auth-divider-text {
+  font-size: 12px;
+  color: #6E7681;
+  white-space: nowrap;
 }
 
 /* Responsive */

@@ -15,6 +15,7 @@ export const useAuthStore = defineStore('auth', () => {
   const loading = ref(true)
   const userTier = ref('basic')
   const tierChecked = ref(false)
+  const githubLoading = ref(false)
 
   const isAuthenticated = computed(() => !!session.value && !!user.value)
   const isPlus = computed(() => userTier.value === 'plus')
@@ -135,6 +136,53 @@ export const useAuthStore = defineStore('auth', () => {
     return data
   }
 
+  const signInWithGitHub = async () => {
+    githubLoading.value = true
+    try {
+      const { error } = await requireSupabase().auth.signInWithOAuth({
+        provider: 'github',
+        options: {
+          redirectTo: 'biliassist://auth/callback'
+        }
+      })
+      if (error) throw error
+      // signInWithOAuth opens external browser, callback arrives via deep-link
+    } catch (e) {
+      githubLoading.value = false
+      throw e
+    }
+  }
+
+  /** 处理 OAuth 回调 URL（由 App.vue deep-link 监听器调用） */
+  const handleOAuthCallback = async (callbackUrl) => {
+    try {
+      // Supabase JS v2: PKCE code exchange
+      const { data, error } = await requireSupabase().auth.exchangeCodeForSession(
+        new URL(callbackUrl).searchParams.get('code')
+      )
+      if (error) throw error
+      session.value = data.session
+      user.value = data.user
+      await checkTier()
+      return true
+    } catch (e) {
+      console.error('OAuth 回调处理失败:', e)
+      // Fallback: try getSession in case Supabase already stored the session
+      try {
+        const { data: { session: currentSession } } = await requireSupabase().auth.getSession()
+        if (currentSession) {
+          session.value = currentSession
+          user.value = currentSession.user
+          await checkTier()
+          return true
+        }
+      } catch {}
+      return false
+    } finally {
+      githubLoading.value = false
+    }
+  }
+
   const signOut = async () => {
     const { error } = await requireSupabase().auth.signOut()
     if (error) throw error
@@ -165,6 +213,9 @@ export const useAuthStore = defineStore('auth', () => {
     verifyOtp,
     signUpWithPassword,
     signInWithPassword,
+    signInWithGitHub,
+    handleOAuthCallback,
+    githubLoading,
     signOut,
     setPassword
   }
