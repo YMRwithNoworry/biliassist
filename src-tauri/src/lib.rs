@@ -112,6 +112,39 @@ async fn manual_reply_video_comments() -> Result<String, String> {
     auto_reply::manual_reply_comments().await
 }
 
+#[tauri::command]
+async fn open_external_url(url: String) -> Result<(), String> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("仅允许打开 http/https 链接".into());
+    }
+
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut cmd = std::process::Command::new("rundll32");
+        cmd.args(["url.dll,FileProtocolHandler", &url]);
+        cmd
+    };
+
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut cmd = std::process::Command::new("open");
+        cmd.arg(&url);
+        cmd
+    };
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut cmd = std::process::Command::new("xdg-open");
+        cmd.arg(&url);
+        cmd
+    };
+
+    command
+        .spawn()
+        .map_err(|e| format!("打开系统浏览器失败: {}", e))?;
+    Ok(())
+}
+
 // ============================================================
 //  \u{5f00}\u{673a}\u{81ea}\u{542f}
 // ============================================================
@@ -190,6 +223,7 @@ pub fn run() {
             test_auto_reply,
             test_ai_reply,
             manual_reply_video_comments,
+            open_external_url,
             get_autostart_status,
             set_autostart,
         ])

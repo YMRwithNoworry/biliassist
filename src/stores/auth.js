@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import { supabase } from '../lib/supabase'
 
 function requireSupabase() {
@@ -8,6 +9,7 @@ function requireSupabase() {
 }
 
 const LOCAL_LICENSE_KEY = 'biliassist_license_activated'
+const OAUTH_REDIRECT_URL = 'biliassist://auth/callback'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
@@ -19,6 +21,9 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => !!session.value && !!user.value)
   const isPlus = computed(() => userTier.value === 'plus')
+  const identities = computed(() => user.value?.identities || [])
+  const hasGitHubIdentity = computed(() => identities.value.some(identity => identity.provider === 'github'))
+  const hasEmailIdentity = computed(() => identities.value.some(identity => identity.provider === 'email'))
 
   /** 检查本地是否已激活 */
   function isLocallyActivated() {
@@ -42,7 +47,12 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const { data: { session: currentSession } } = await requireSupabase().auth.getSession()
       session.value = currentSession
-      user.value = currentSession?.user ?? null
+      if (currentSession) {
+        const { data: { user: currentUser } } = await requireSupabase().auth.getUser()
+        user.value = currentUser ?? currentSession.user
+      } else {
+        user.value = null
+      }
       if (user.value) {
         await checkTier()
       } else if (isLocallyActivated()) {
@@ -136,17 +146,51 @@ export const useAuthStore = defineStore('auth', () => {
     return data
   }
 
+  async function openOAuthUrl(data) {
+    const url = data?.url
+    if (!url) throw new Error('未获取到 GitHub 授权链接')
+    await invoke('open_external_url', { url })
+  }
+
   const signInWithGitHub = async () => {
     githubLoading.value = true
     try {
-      const { error } = await requireSupabase().auth.signInWithOAuth({
+      const { data, error } = await requireSupabase().auth.signInWithOAuth({
         provider: 'github',
         options: {
-          redirectTo: 'biliassist://auth/callback'
+          redirectTo: OAUTH_REDIRECT_URL,
+          skipBrowserRedirect: true,
+          scopes: 'read:user user:email'
         }
       })
       if (error) throw error
-      // signInWithOAuth opens external browser, callback arrives via deep-link
+      await openOAuthUrl(data)
+      githubLoading.value = false
+      // OAuth URL is opened in the system browser; callback arrives via deep-link.
+    } catch (e) {
+      githubLoading.value = false
+      throw e
+    }
+  }
+
+  const linkGitHubIdentity = async () => {
+    if (!isAuthenticated.value) {
+      throw new Error('请先使用邮箱登录后再绑定 GitHub')
+    }
+    githubLoading.value = true
+    try {
+      const { data, error } = await requireSupabase().auth.linkIdentity({
+        provider: 'github',
+        options: {
+          redirectTo: OAUTH_REDIRECT_URL,
+          skipBrowserRedirect: true,
+          scopes: 'read:user user:email'
+        }
+      })
+      if (error) throw error
+      await openOAuthUrl(data)
+      githubLoading.value = false
+      // Binding continues in the system browser; callback arrives via deep-link.
     } catch (e) {
       githubLoading.value = false
       throw e
@@ -162,7 +206,8 @@ export const useAuthStore = defineStore('auth', () => {
       )
       if (error) throw error
       session.value = data.session
-      user.value = data.user
+      const { data: { user: currentUser } } = await requireSupabase().auth.getUser()
+      user.value = currentUser ?? data.user
       await checkTier()
       return true
     } catch (e) {
@@ -172,7 +217,8 @@ export const useAuthStore = defineStore('auth', () => {
         const { data: { session: currentSession } } = await requireSupabase().auth.getSession()
         if (currentSession) {
           session.value = currentSession
-          user.value = currentSession.user
+          const { data: { user: currentUser } } = await requireSupabase().auth.getUser()
+          user.value = currentUser ?? currentSession.user
           await checkTier()
           return true
         }
@@ -190,6 +236,19 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
   }
 
+  const setEmailPassword = async (email, password) => {
+    const update = { password }
+    if (email && email !== user.value?.email) {
+      update.email = email
+    }
+    const { data, error } = await requireSupabase().auth.updateUser(update)
+    if (error) throw error
+    if (data.user) {
+      user.value = data.user
+    }
+    return data
+  }
+
   const setPassword = async (newPassword) => {
     const { error } = await requireSupabase().auth.updateUser({
       password: newPassword
@@ -205,6 +264,9 @@ export const useAuthStore = defineStore('auth', () => {
     tierChecked,
     isAuthenticated,
     isPlus,
+    identities,
+    hasGitHubIdentity,
+    hasEmailIdentity,
     isLocallyActivated,
     saveLocalActivation,
     getSession: agetSession,
@@ -214,9 +276,11 @@ export const useAuthStore = defineStore('auth', () => {
     signUpWithPassword,
     signInWithPassword,
     signInWithGitHub,
+    linkGitHubIdentity,
     handleOAuthCallback,
     githubLoading,
     signOut,
+    setEmailPassword,
     setPassword
   }
 })

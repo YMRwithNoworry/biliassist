@@ -11,6 +11,23 @@
         </div>
         <div class="header-actions">
           <span class="header-user">{{ auth.user?.email }}</span>
+          <button
+            v-if="!auth.hasGitHubIdentity"
+            class="btn-account-link"
+            :disabled="auth.githubLoading"
+            @click="bindGitHub"
+          >
+            {{ auth.githubLoading ? '打开中...' : '绑定 GitHub' }}
+          </button>
+          <button
+            v-if="!auth.hasEmailIdentity"
+            class="btn-account-link"
+            @click="showEmailBindDialog = true"
+          >
+            绑定邮箱
+          </button>
+          <div v-if="accountLinkError" class="header-account-error">{{ accountLinkError }}</div>
+          <div v-if="accountLinkSuccess" class="header-account-success">{{ accountLinkSuccess }}</div>
           <button v-if="auth.isPlus" class="tier-badge tier-plus" disabled>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <polyline points="20 6 9 17 4 12"/>
@@ -65,6 +82,56 @@
             @click="submitKey"
           >
             {{ keySubmitting ? '验证中...' : '激活' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Email Bind Dialog -->
+    <div v-if="showEmailBindDialog" class="dialog-overlay" @click.self="showEmailBindDialog = false">
+      <div class="dialog-card">
+        <div class="dialog-header">
+          <h2 class="dialog-title">绑定邮箱登录</h2>
+          <button class="dialog-close" @click="showEmailBindDialog = false">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="dialog-body">
+          <p class="dialog-desc">
+            为当前 GitHub 账号设置邮箱和密码后，后续可使用邮箱/密码登录同一个账号。
+          </p>
+          <input
+            v-model="emailBindEmail"
+            type="email"
+            class="dialog-input"
+            placeholder="请输入邮箱"
+            :disabled="emailBindSubmitting"
+          />
+          <input
+            v-model="emailBindPassword"
+            type="password"
+            class="dialog-input"
+            placeholder="设置登录密码（至少6位）"
+            :disabled="emailBindSubmitting"
+          />
+          <input
+            v-model="emailBindConfirm"
+            type="password"
+            class="dialog-input"
+            placeholder="再次输入密码"
+            :disabled="emailBindSubmitting"
+            @keyup.enter="submitEmailBinding"
+          />
+          <div v-if="emailBindError" class="dialog-error">{{ emailBindError }}</div>
+          <div v-if="emailBindSuccess" class="dialog-success">{{ emailBindSuccess }}</div>
+          <button
+            class="btn btn-primary btn-block"
+            :disabled="!emailBindEmail || !emailBindPassword || emailBindSubmitting"
+            @click="submitEmailBinding"
+          >
+            {{ emailBindSubmitting ? '绑定中...' : '绑定邮箱登录' }}
           </button>
         </div>
       </div>
@@ -245,6 +312,15 @@ const keySubmitting = ref(false)
 const keyError = ref('')
 const keySuccess = ref('')
 const showReminder = ref(true)
+const showEmailBindDialog = ref(false)
+const emailBindEmail = ref(auth.user?.email || '')
+const emailBindPassword = ref('')
+const emailBindConfirm = ref('')
+const emailBindSubmitting = ref(false)
+const emailBindError = ref('')
+const emailBindSuccess = ref('')
+const accountLinkError = ref('')
+const accountLinkSuccess = ref('')
 let reminderTimer = null
 
 const REMINDER_INTERVAL = 30 * 60 * 1000
@@ -260,6 +336,49 @@ function closePurchaseDialog() {
   showPurchaseDialog.value = false
   if (auth.isPlus) {
     try { localStorage.setItem(PURCHASE_DISMISSED_KEY, 'true') } catch {}
+  }
+}
+
+async function bindGitHub() {
+  accountLinkError.value = ''
+  accountLinkSuccess.value = ''
+  try {
+    await auth.linkGitHubIdentity()
+    accountLinkSuccess.value = '已在系统浏览器中打开 GitHub 绑定页面'
+  } catch (e) {
+    accountLinkError.value = e?.message || '打开 GitHub 绑定失败'
+  }
+}
+
+async function submitEmailBinding() {
+  if (emailBindSubmitting.value) return
+  emailBindError.value = ''
+  emailBindSuccess.value = ''
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailBindEmail.value)) {
+    emailBindError.value = '请输入有效邮箱'
+    return
+  }
+  if (emailBindPassword.value.length < 6) {
+    emailBindError.value = '密码至少需要6位'
+    return
+  }
+  if (emailBindPassword.value !== emailBindConfirm.value) {
+    emailBindError.value = '两次输入的密码不一致'
+    return
+  }
+
+  emailBindSubmitting.value = true
+  try {
+    await auth.setEmailPassword(emailBindEmail.value, emailBindPassword.value)
+    emailBindSuccess.value = '绑定成功！如邮箱需要确认，请按邮件提示完成确认。'
+    emailBindPassword.value = ''
+    emailBindConfirm.value = ''
+    setTimeout(() => { showEmailBindDialog.value = false }, 1500)
+  } catch (e) {
+    emailBindError.value = e?.message || '绑定邮箱失败'
+  } finally {
+    emailBindSubmitting.value = false
   }
 }
 
@@ -414,6 +533,55 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.btn-account-link {
+  padding: 6px 10px;
+  background-color: #21262D;
+  border: 1px solid #30363D;
+  border-radius: 6px;
+  color: #C9D1D9;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.btn-account-link:hover:not(:disabled) {
+  background-color: #30363D;
+  border-color: #484F58;
+  color: #E6EDF3;
+}
+
+.btn-account-link:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.header-account-error,
+.header-account-success {
+  max-width: 220px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-account-error {
+  background-color: rgba(248, 81, 73, 0.1);
+  border: 1px solid rgba(248, 81, 73, 0.3);
+  color: #F85149;
+}
+
+.header-account-success {
+  background-color: rgba(63, 185, 80, 0.1);
+  border: 1px solid rgba(63, 185, 80, 0.3);
+  color: #3FB950;
 }
 
 /* Tier Badge */
@@ -732,6 +900,13 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.dialog-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #8B949E;
 }
 
 .dialog-input {
