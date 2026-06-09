@@ -509,7 +509,7 @@ impl CommentHandler {
                     tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
                 }
                 let resp = get_http_client()
-                .post("https://api.bilibili.com/x/v2/reply/like")
+                .post("https://api.bilibili.com/x/v2/reply/action")
                 .header("Cookie", &cookie)
                 .header("Referer", format!("https://www.bilibili.com/video/av{}", aid))
                 .header("Origin", "https://www.bilibili.com")

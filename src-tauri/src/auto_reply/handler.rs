@@ -78,7 +78,8 @@ pub trait MessageHandler: Send + Sync {
                     state.mark_replied(dedup_key).await;
                 }
                 if settings.like_comments && self.source_type() == MsgSource::Comment {
-                    let like_key = format!("like:{}:{}", self.source_type().id(), message.id);
+                    let like_key =
+                        format!("like:reply_action:{}:{}", self.source_type().id(), message.id);
                     if !state.is_liked(&like_key).await
                         && self
                             .on_reply_success(account, &message, state)
@@ -140,7 +141,8 @@ pub trait MessageHandler: Send + Sync {
                     result.success_count += 1;
 
                     if settings.like_comments && self.source_type() == MsgSource::Comment {
-                        let like_key = format!("like:{}:{}", self.source_type().id(), message.id);
+                        let like_key =
+                            format!("like:reply_action:{}:{}", self.source_type().id(), message.id);
                         if !state.is_liked(&like_key).await
                             && self
                                 .on_reply_success(account, &message, state)
