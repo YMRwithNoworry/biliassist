@@ -34,51 +34,98 @@ impl AutoReplyService {
             let state = get_global_state();
             let settings = state.get_settings().await;
 
-            if !settings.enabled {
+            if !settings.enabled && !settings.like_comments {
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                 continue;
             }
 
-            for source in &settings.sources {
-                if let Some(handler) = self.registry.get_handler(source) {
-                    let account = match crate::storage::get_active_account().await {
-                        Some(acc) => acc,
-                        None => {
-                            log::warn!("\u{6ca1}\u{6709}\u{6fc0}\u{6d3b}\u{7684}\u{8d26}\u{53f7}");
-                            continue;
-                        }
+            let account = match crate::storage::get_active_account().await {
+                Some(acc) => acc,
+                None => {
+                    log::warn!("\u{6ca1}\u{6709}\u{6fc0}\u{6d3b}\u{7684}\u{8d26}\u{53f7}");
+                    let interval = {
+                        let s = state.get_settings().await;
+                        s.interval
                     };
+                    tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
+                    continue;
+                }
+            };
 
-                    let has_sessdata = account.cookie.contains("SESSDATA=");
-                    let has_bili_jct = account.cookie.contains("bili_jct=");
-                    let has_dede = account.cookie.contains("DedeUserID=");
-                    log::info!(
-                        "\u{8d26}\u{53f7} cookie \u{8bca}\u{65ad}: len={}, SESSDATA={}, bili_jct={}, DedeUserID={}",
-                        account.cookie.len(), has_sessdata, has_bili_jct, has_dede
-                    );
+            let has_sessdata = account.cookie.contains("SESSDATA=");
+            let has_bili_jct = account.cookie.contains("bili_jct=");
+            let has_dede = account.cookie.contains("DedeUserID=");
+            log::info!(
+                "\u{8d26}\u{53f7} cookie \u{8bca}\u{65ad}: len={}, SESSDATA={}, bili_jct={}, DedeUserID={}",
+                account.cookie.len(), has_sessdata, has_bili_jct, has_dede
+            );
 
-                    if !has_sessdata || !has_bili_jct {
-                        log::error!("cookie \u{4e0d}\u{5b8c}\u{6574}\u{ff08}\u{7f3a}\u{5c11} SESSDATA \u{6216} bili_jct\u{ff09}\u{ff0c}\u{8bf7}\u{5220}\u{9664}\u{8d26}\u{53f7}\u{91cd}\u{65b0}\u{626b}\u{7801}\u{767b}\u{5f55}");
-                        continue;
-                    }
+            if !has_sessdata || !has_bili_jct {
+                log::error!("cookie \u{4e0d}\u{5b8c}\u{6574}\u{ff08}\u{7f3a}\u{5c11} SESSDATA \u{6216} bili_jct\u{ff09}\u{ff0c}\u{8bf7}\u{5220}\u{9664}\u{8d26}\u{53f7}\u{91cd}\u{65b0}\u{626b}\u{7801}\u{767b}\u{5f55}");
+                let interval = {
+                    let s = state.get_settings().await;
+                    s.interval
+                };
+                tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
+                continue;
+            }
 
-                    match handler.handle(&account, state).await {
-                        Ok(result) => {
-                            if result.success_count > 0 || result.error_count > 0 {
-                                log::info!(
-                                    "{} \u{5904}\u{7406}\u{5b8c}\u{6210}: \u{6210}\u{529f}={}, \u{5931}\u{8d25}={}",
+            if settings.enabled {
+                for source in &settings.sources {
+                    if let Some(handler) = self.registry.get_handler(source) {
+                        match handler.handle(&account, state).await {
+                            Ok(result) => {
+                                if result.success_count > 0
+                                    || result.error_count > 0
+                                    || result.like_success_count > 0
+                                    || result.like_error_count > 0
+                                {
+                                    log::info!(
+                                        "{} \u{5904}\u{7406}\u{5b8c}\u{6210}: \u{6210}\u{529f}={}, \u{5931}\u{8d25}={}, \u{70b9}\u{8d5e}\u{6210}\u{529f}={}, \u{70b9}\u{8d5e}\u{5931}\u{8d25}={}",
+                                        handler.name(),
+                                        result.success_count,
+                                        result.error_count,
+                                        result.like_success_count,
+                                        result.like_error_count
+                                    );
+                                }
+                                if result.stopped_by_rate_limit {
+                                    log::warn!("{} \u{89e6}\u{53d1}\u{98ce}\u{63a7}\u{9650}\u{5236}\u{ff0c}\u{505c}\u{6b62}\u{5904}\u{7406}", handler.name());
+                                }
+                            }
+                            Err(e) => {
+                                log::error!(
+                                    "{} \u{5904}\u{7406}\u{5931}\u{8d25}: {}",
                                     handler.name(),
-                                    result.success_count,
-                                    result.error_count
+                                    e
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            if settings.like_comments
+                && (!settings.enabled || !settings.sources.contains(&MsgSource::Comment))
+            {
+                if let Some(handler) = self.registry.get_handler(&MsgSource::Comment) {
+                    match handler.handle_likes_only(&account, state).await {
+                        Ok(result) => {
+                            if result.like_success_count > 0 || result.like_error_count > 0 {
+                                log::info!(
+                                    "{} \u{70b9}\u{8d5e}\u{5904}\u{7406}\u{5b8c}\u{6210}: \u{70b9}\u{8d5e}\u{6210}\u{529f}={}, \u{70b9}\u{8d5e}\u{5931}\u{8d25}={}",
+                                    handler.name(),
+                                    result.like_success_count,
+                                    result.like_error_count
                                 );
                             }
                             if result.stopped_by_rate_limit {
-                                log::warn!("{} \u{89e6}\u{53d1}\u{98ce}\u{63a7}\u{9650}\u{5236}\u{ff0c}\u{505c}\u{6b62}\u{5904}\u{7406}", handler.name());
+                                log::warn!("{} \u{70b9}\u{8d5e}\u{89e6}\u{53d1}\u{98ce}\u{63a7}\u{9650}\u{5236}\u{ff0c}\u{505c}\u{6b62}\u{5904}\u{7406}", handler.name());
                             }
                         }
                         Err(e) => {
                             log::error!(
-                                "{} \u{5904}\u{7406}\u{5931}\u{8d25}: {}",
+                                "{} \u{70b9}\u{8d5e}\u{5904}\u{7406}\u{5931}\u{8d25}: {}",
                                 handler.name(),
                                 e
                             );
@@ -115,10 +162,12 @@ impl AutoReplyService {
                 match handler.handle(&account, state).await {
                     Ok(result) => {
                         results.push(format!(
-                            "{}: \u{6210}\u{529f}{}\u{6761} \u{5931}\u{8d25}{}\u{6761}",
+                            "{}: \u{6210}\u{529f}{}\u{6761} \u{5931}\u{8d25}{}\u{6761} \u{70b9}\u{8d5e}\u{6210}\u{529f}{}\u{6761} \u{70b9}\u{8d5e}\u{5931}\u{8d25}{}\u{6761}",
                             handler.name(),
                             result.success_count,
-                            result.error_count
+                            result.error_count,
+                            result.like_success_count,
+                            result.like_error_count
                         ));
                     }
                     Err(e) => {

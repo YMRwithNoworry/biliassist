@@ -19,6 +19,8 @@ pub struct Message {
 pub struct HandleResult {
     pub success_count: u32,
     pub error_count: u32,
+    pub like_success_count: u32,
+    pub like_error_count: u32,
     pub stopped_by_rate_limit: bool,
 }
 
@@ -54,6 +56,38 @@ pub trait MessageHandler: Send + Sync {
         )
     }
 
+    async fn like_comment_if_needed(
+        &self,
+        account: &UserInfo,
+        message: &Message,
+        state: &AutoReplyState,
+        result: &mut HandleResult,
+    ) {
+        let settings = state.get_settings().await;
+        if !settings.like_comments || self.source_type() != MsgSource::Comment {
+            return;
+        }
+
+        let like_key = format!("like:reply_action:{}:{}", self.source_type().id(), message.id);
+        if state.is_liked(&like_key).await {
+            return;
+        }
+
+        match self.on_reply_success(account, message, state).await {
+            Ok(_) => {
+                state.mark_liked(like_key).await;
+                result.like_success_count += 1;
+            }
+            Err(e) => {
+                log::warn!("{}自动点赞失败: {}", self.name(), e);
+                result.like_error_count += 1;
+                if is_rate_limit_error(&e) {
+                    result.stopped_by_rate_limit = true;
+                }
+            }
+        }
+    }
+
     async fn handle(
         &self,
         account: &UserInfo,
@@ -77,17 +111,10 @@ pub trait MessageHandler: Send + Sync {
                 if settings.reply_only_once {
                     state.mark_replied(dedup_key).await;
                 }
-                if settings.like_comments && self.source_type() == MsgSource::Comment {
-                    let like_key =
-                        format!("like:reply_action:{}:{}", self.source_type().id(), message.id);
-                    if !state.is_liked(&like_key).await
-                        && self
-                            .on_reply_success(account, &message, state)
-                            .await
-                            .is_ok()
-                    {
-                        state.mark_liked(like_key).await;
-                    }
+                self.like_comment_if_needed(account, &message, state, &mut result)
+                    .await;
+                if result.stopped_by_rate_limit {
+                    break;
                 }
                 continue;
             }
@@ -140,17 +167,10 @@ pub trait MessageHandler: Send + Sync {
                         .await;
                     result.success_count += 1;
 
-                    if settings.like_comments && self.source_type() == MsgSource::Comment {
-                        let like_key =
-                            format!("like:reply_action:{}:{}", self.source_type().id(), message.id);
-                        if !state.is_liked(&like_key).await
-                            && self
-                                .on_reply_success(account, &message, state)
-                                .await
-                                .is_ok()
-                        {
-                            state.mark_liked(like_key).await;
-                        }
+                    self.like_comment_if_needed(account, &message, state, &mut result)
+                        .await;
+                    if result.stopped_by_rate_limit {
+                        break;
                     }
                 }
                 Err(e) => {
@@ -165,6 +185,38 @@ pub trait MessageHandler: Send + Sync {
             }
 
             tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+        }
+
+        Ok(result)
+    }
+
+    async fn handle_likes_only(
+        &self,
+        account: &UserInfo,
+        state: &AutoReplyState,
+    ) -> Result<HandleResult, String> {
+        let settings = state.get_settings().await;
+        if !settings.like_comments || self.source_type() != MsgSource::Comment {
+            return Ok(HandleResult::default());
+        }
+
+        let messages = self.fetch_messages(account).await?;
+        let mut result = HandleResult::default();
+
+        for message in messages {
+            let dedup_key = format!("{}:{}", self.source_type().id(), message.id);
+            let already_replied_on_bilibili = message.extra_data["already_replied"]
+                .as_bool()
+                .unwrap_or(false);
+
+            if already_replied_on_bilibili || state.is_replied(&dedup_key).await {
+                self.like_comment_if_needed(account, &message, state, &mut result)
+                    .await;
+                if result.stopped_by_rate_limit {
+                    break;
+                }
+                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            }
         }
 
         Ok(result)

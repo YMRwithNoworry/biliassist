@@ -543,9 +543,14 @@ impl CommentHandler {
                         &text[..text.len().min(200)]
                     )
                 })?;
-                if json["code"] != 0 {
+                let code = json["code"].as_i64().unwrap_or(-1);
+                if code != 0 {
                     let msg = json["message"].as_str().unwrap_or("未知");
-                    return Err(format!("点赞失败: {}", msg));
+                    if code == 65006 || msg.contains("重复") || msg.contains("已赞") {
+                        log::info!("评论 rpid={} 已处于点赞状态", rpid);
+                        return Ok(());
+                    }
+                    return Err(format!("点赞失败: code={}, msg={}", code, msg));
                 }
                 Ok(())
             }
