@@ -26,6 +26,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { RouterView } from 'vue-router'
+import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { listen } from '@tauri-apps/api/event'
 import { useRouter } from 'vue-router'
@@ -92,6 +93,22 @@ onMounted(async () => {
       }
     })
     onUnmounted(unlistenOAuth)
+    try {
+      const currentDeepLink = await invoke('get_current_deep_link')
+      if (currentDeepLink && typeof currentDeepLink === 'string') {
+        console.log('[App] Startup OAuth callback:', currentDeepLink)
+        const success = await auth.handleOAuthCallback(currentDeepLink)
+        if (success) {
+          initialLoading.value = false
+          router.push('/')
+        } else {
+          initError.value = 'GitHub 登录失败，请重试'
+          initialLoading.value = false
+        }
+      }
+    } catch (e) {
+      console.warn('[App] Failed to read startup OAuth callback:', e)
+    }
   } catch (e) {
     console.warn('[App] OAuth 回调监听注册失败:', e)
   }

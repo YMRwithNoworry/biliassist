@@ -11,6 +11,64 @@ function requireSupabase() {
 const LOCAL_LICENSE_KEY = 'biliassist_license_activated'
 const OAUTH_REDIRECT_URL = 'biliassist://auth/callback'
 
+function firstString(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
+    }
+  }
+  return ''
+}
+
+function getOAuthUrl(data) {
+  return firstString(
+    data?.verification_uri_complete,
+    data?.verificationUriComplete,
+    data?.verification_url_complete,
+    data?.verificationUrlComplete,
+    data?.url,
+    data?.verification_uri,
+    data?.verificationUri,
+    data?.verification_url,
+    data?.verificationUrl
+  )
+}
+
+function getUrlUserCode(url) {
+  try {
+    const params = new URL(url).searchParams
+    return firstString(
+      params.get('user_code'),
+      params.get('userCode'),
+      params.get('device_user_code'),
+      params.get('deviceUserCode')
+    )
+  } catch {
+    return ''
+  }
+}
+
+function getOAuthUserCode(data, url) {
+  return firstString(
+    data?.user_code,
+    data?.userCode,
+    data?.device_user_code,
+    data?.deviceUserCode,
+    data?.device?.user_code,
+    data?.device?.userCode,
+    getUrlUserCode(url)
+  )
+}
+
+function getCallbackParam(callbackUrl, key) {
+  const url = new URL(callbackUrl)
+  const searchValue = url.searchParams.get(key)
+  if (searchValue) return searchValue
+
+  const hash = url.hash.startsWith('#') ? url.hash.slice(1) : url.hash
+  return new URLSearchParams(hash).get(key)
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
   const session = ref(null)
@@ -147,9 +205,27 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function openOAuthUrl(data) {
-    const url = data?.url
+    const url = getOAuthUrl(data)
     if (!url) throw new Error('未获取到 GitHub 授权链接')
+    const userCode = getOAuthUserCode(data, url)
+    let codeCopied = false
+
+    if (userCode) {
+      try {
+        await invoke('copy_text_to_clipboard', { text: userCode })
+        codeCopied = true
+      } catch (tauriError) {
+        try {
+          await navigator.clipboard.writeText(userCode)
+          codeCopied = true
+        } catch (browserError) {
+          console.warn('复制 GitHub 验证码失败:', tauriError, browserError)
+        }
+      }
+    }
+
     await invoke('open_external_url', { url })
+    return { userCode, codeCopied }
   }
 
   const signInWithGitHub = async () => {
@@ -164,8 +240,9 @@ export const useAuthStore = defineStore('auth', () => {
         }
       })
       if (error) throw error
-      await openOAuthUrl(data)
+      const result = await openOAuthUrl(data)
       githubLoading.value = false
+      return result
       // OAuth URL is opened in the system browser; callback arrives via deep-link.
     } catch (e) {
       githubLoading.value = false
@@ -188,8 +265,9 @@ export const useAuthStore = defineStore('auth', () => {
         }
       })
       if (error) throw error
-      await openOAuthUrl(data)
+      const result = await openOAuthUrl(data)
       githubLoading.value = false
+      return result
       // Binding continues in the system browser; callback arrives via deep-link.
     } catch (e) {
       githubLoading.value = false
@@ -200,10 +278,22 @@ export const useAuthStore = defineStore('auth', () => {
   /** 处理 OAuth 回调 URL（由 App.vue deep-link 监听器调用） */
   const handleOAuthCallback = async (callbackUrl) => {
     try {
-      // Supabase JS v2: PKCE code exchange
-      const { data, error } = await requireSupabase().auth.exchangeCodeForSession(
-        new URL(callbackUrl).searchParams.get('code')
-      )
+      const callbackError = getCallbackParam(callbackUrl, 'error_description') || getCallbackParam(callbackUrl, 'error')
+      if (callbackError) throw new Error(callbackError)
+
+      const code = getCallbackParam(callbackUrl, 'code')
+      const accessToken = getCallbackParam(callbackUrl, 'access_token')
+      const refreshToken = getCallbackParam(callbackUrl, 'refresh_token')
+      if (!code && (!accessToken || !refreshToken)) {
+        throw new Error('GitHub 回调缺少授权码')
+      }
+
+      const { data, error } = code
+        ? await requireSupabase().auth.exchangeCodeForSession(code)
+        : await requireSupabase().auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          })
       if (error) throw error
       session.value = data.session
       const { data: { user: currentUser } } = await requireSupabase().auth.getUser()

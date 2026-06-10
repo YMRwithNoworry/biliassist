@@ -346,8 +346,14 @@ const handleGitHubLogin = async () => {
   error.value = ''
   success.value = ''
   try {
-    await auth.signInWithGitHub()
-    success.value = '已在浏览器中打开 GitHub 登录页面，完成登录后应用将自动跳转'
+    const result = await auth.signInWithGitHub()
+    if (result?.userCode) {
+      success.value = result.codeCopied
+        ? `已打开 GitHub 登录页面，验证码 ${result.userCode} 已复制到剪贴板`
+        : `已打开 GitHub 登录页面，请手动输入验证码：${result.userCode}`
+    } else {
+      success.value = '已在浏览器中打开 GitHub 登录页面，完成登录后应用将自动跳转'
+    }
   } catch (e) {
     error.value = e.message || 'GitHub 登录失败'
   }

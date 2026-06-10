@@ -343,8 +343,14 @@ async function bindGitHub() {
   accountLinkError.value = ''
   accountLinkSuccess.value = ''
   try {
-    await auth.linkGitHubIdentity()
-    accountLinkSuccess.value = '已在系统浏览器中打开 GitHub 绑定页面'
+    const result = await auth.linkGitHubIdentity()
+    if (result?.userCode) {
+      accountLinkSuccess.value = result.codeCopied
+        ? `已打开 GitHub 绑定页面，验证码 ${result.userCode} 已复制到剪贴板`
+        : `已打开 GitHub 绑定页面，请手动输入验证码：${result.userCode}`
+    } else {
+      accountLinkSuccess.value = '已在系统浏览器中打开 GitHub 绑定页面'
+    }
   } catch (e) {
     accountLinkError.value = e?.message || '打开 GitHub 绑定失败'
   }

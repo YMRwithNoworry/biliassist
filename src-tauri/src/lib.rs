@@ -6,7 +6,6 @@ use base64::{engine::general_purpose, Engine};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::Emitter;
-use tauri::Listener;
 use tauri::Manager;
 use tauri_plugin_deep_link::DeepLinkExt;
 
@@ -145,6 +144,99 @@ async fn open_external_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+fn run_clipboard_command(mut command: std::process::Command, text: &str) -> Result<(), String> {
+    command
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped());
+
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("failed to write clipboard: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        std::io::Write::write_all(&mut stdin, text.as_bytes())
+            .map_err(|e| format!("failed to write clipboard: {}", e))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("failed to write clipboard: {}", e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        Err(if stderr.is_empty() {
+            "failed to write clipboard".into()
+        } else {
+            format!("failed to write clipboard: {}", stderr)
+        })
+    }
+}
+
+#[tauri::command]
+async fn copy_text_to_clipboard(text: String) -> Result<(), String> {
+    if text.is_empty() {
+        return Err("clipboard text cannot be empty".into());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+
+        let mut command = std::process::Command::new("powershell");
+        command.args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Set-Clipboard -Value ([Console]::In.ReadToEnd())",
+        ]);
+        command.creation_flags(0x08000000);
+        return run_clipboard_command(command, &text);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        return run_clipboard_command(std::process::Command::new("pbcopy"), &text);
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let mut errors = Vec::new();
+
+        let mut wl_copy = std::process::Command::new("wl-copy");
+        match run_clipboard_command(wl_copy, &text) {
+            Ok(()) => return Ok(()),
+            Err(e) => errors.push(e),
+        }
+
+        let mut xclip = std::process::Command::new("xclip");
+        xclip.args(["-selection", "clipboard"]);
+        match run_clipboard_command(xclip, &text) {
+            Ok(()) => return Ok(()),
+            Err(e) => errors.push(e),
+        }
+
+        let mut xsel = std::process::Command::new("xsel");
+        xsel.args(["--clipboard", "--input"]);
+        match run_clipboard_command(xsel, &text) {
+            Ok(()) => return Ok(()),
+            Err(e) => errors.push(e),
+        }
+
+        return Err(format!("failed to write clipboard: {}", errors.join("; ")));
+    }
+}
+
+#[tauri::command]
+async fn get_current_deep_link(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    app.deep_link()
+        .get_current()
+        .map_err(|e| e.to_string())
+        .map(|urls| urls.and_then(|urls| urls.into_iter().next().map(|url| url.to_string())))
+}
+
 // ============================================================
 //  \u{5f00}\u{673a}\u{81ea}\u{542f}
 // ============================================================
@@ -223,6 +315,8 @@ pub fn run() {
             test_auto_reply,
             test_ai_reply,
             manual_reply_video_comments,
+            copy_text_to_clipboard,
+            get_current_deep_link,
             open_external_url,
             get_autostart_status,
             set_autostart,
@@ -241,10 +335,12 @@ pub fn run() {
 
             // 监听 deep-link 事件，将回调 URL 传给前端
             let app_handle = app.handle().clone();
-            app.listen("deep-link://request", move |event| {
-                log::info!("收到 deep-link 回调: {:?}", event.payload());
-                let url = event.payload();
-                let _ = app_handle.emit("oauth-callback", url.to_string());
+            app.deep_link().on_open_url(move |event| {
+                let urls = event.urls();
+                log::info!("Received deep-link callback: {:?}", urls);
+                for url in urls {
+                    let _ = app_handle.emit("oauth-callback", url.to_string());
+                }
                 show_main_window(&app_handle);
             });
 

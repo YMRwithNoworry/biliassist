@@ -13,7 +13,12 @@ function createSupabaseClient() {
   }
 
   try {
-    return createClient(supabaseUrl, supabaseAnonKey)
+    return createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        flowType: 'pkce',
+        detectSessionInUrl: false
+      }
+    })
   } catch (e) {
     console.error('[Supabase] 客户端创建失败:', e)
     return null
