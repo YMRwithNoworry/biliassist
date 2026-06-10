@@ -61,7 +61,7 @@ jobs:
               COMMIT_MSG=$(git log -1 --pretty=%B)
               if echo "$COMMIT_MSG" | grep -qE "(BREAKING CHANGE|major:|\!:)"; then
                 BUMP_TYPE="major"
-              elif echo "$COMMIT_MSG" | grep -qE "(feat:|feature:|minor:)"; then
+              elif echo "$COMMIT_MSG" | grep -qE "(minor:)"; then
                 BUMP_TYPE="minor"
               else
                 BUMP_TYPE="patch"
@@ -84,6 +84,17 @@ jobs:
                 PATCH=$((PATCH + 1))
                 ;;
             esac
+
+            VERSION_STEP=20
+            if [ "$PATCH" -ge "$VERSION_STEP" ]; then
+              PATCH=0
+              MINOR=$((MINOR + 1))
+            fi
+            if [ "$MINOR" -ge "$VERSION_STEP" ]; then
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+            fi
 
             NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
             echo "新版本: $NEW_VERSION"

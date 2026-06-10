@@ -69,6 +69,25 @@ function getCallbackParam(callbackUrl, key) {
   return new URLSearchParams(hash).get(key)
 }
 
+function normalizeLinkIdentityError(error) {
+  const message = error?.message || String(error || '')
+  const lowerMessage = message.toLowerCase()
+
+  if (lowerMessage.includes('manual') && lowerMessage.includes('link')) {
+    return new Error('GitHub 绑定失败：请在 Supabase Auth 设置中开启 Manual Linking（手动身份绑定）')
+  }
+  if (lowerMessage.includes('already') && lowerMessage.includes('linked')) {
+    return new Error('这个 GitHub 账号已绑定到其他账号，请更换 GitHub 账号或先解绑')
+  }
+  return error instanceof Error ? error : new Error(message || 'GitHub 绑定失败')
+}
+
+function toProviderList(value) {
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string' && value) return [value]
+  return []
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
   const session = ref(null)
@@ -80,8 +99,13 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => !!session.value && !!user.value)
   const isPlus = computed(() => userTier.value === 'plus')
   const identities = computed(() => user.value?.identities || [])
-  const hasGitHubIdentity = computed(() => identities.value.some(identity => identity.provider === 'github'))
-  const hasEmailIdentity = computed(() => identities.value.some(identity => identity.provider === 'email'))
+  const appMetadataProviders = computed(() => toProviderList(user.value?.app_metadata?.providers))
+  const providers = computed(() => Array.from(new Set([
+    ...identities.value.map(identity => identity.provider).filter(Boolean),
+    ...appMetadataProviders.value.filter(Boolean)
+  ])))
+  const hasGitHubIdentity = computed(() => providers.value.includes('github'))
+  const hasEmailIdentity = computed(() => providers.value.includes('email') || !!user.value?.email)
 
   /** 检查本地是否已激活 */
   function isLocallyActivated() {
@@ -239,7 +263,7 @@ export const useAuthStore = defineStore('auth', () => {
           scopes: 'read:user user:email'
         }
       })
-      if (error) throw error
+      if (error) throw normalizeLinkIdentityError(error)
       const result = await openOAuthUrl(data)
       githubLoading.value = false
       return result
@@ -355,6 +379,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     isPlus,
     identities,
+    providers,
     hasGitHubIdentity,
     hasEmailIdentity,
     isLocallyActivated,

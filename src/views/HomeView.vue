@@ -15,6 +15,7 @@
             v-if="!auth.hasGitHubIdentity"
             class="btn-account-link"
             :disabled="auth.githubLoading"
+            :title="githubBindTitle"
             @click="bindGitHub"
           >
             {{ auth.githubLoading ? '打开中...' : '绑定 GitHub' }}
@@ -297,7 +298,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { invoke } from '@tauri-apps/api/core'
@@ -321,6 +322,11 @@ const emailBindError = ref('')
 const emailBindSuccess = ref('')
 const accountLinkError = ref('')
 const accountLinkSuccess = ref('')
+const githubBindTitle = computed(() =>
+  auth.hasEmailIdentity
+    ? '为当前邮箱账号绑定 GitHub 登录'
+    : '绑定 GitHub 后可使用 GitHub 登录同一个账号'
+)
 let reminderTimer = null
 
 const REMINDER_INTERVAL = 30 * 60 * 1000
