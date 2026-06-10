@@ -216,6 +216,21 @@
         <p class="hero-subtitle">扫码登录 · 自动回复 · 多账号管理</p>
       </section>
 
+      <!-- Account Binding -->
+      <section v-if="auth.hasEmailIdentity && !auth.hasGitHubIdentity" class="account-bind-card">
+        <div>
+          <h2 class="account-bind-title">绑定 GitHub 登录</h2>
+          <p class="account-bind-desc">当前邮箱账号可绑定 GitHub，绑定后两种方式都会登录到同一个账号。</p>
+        </div>
+        <button
+          class="btn btn-primary account-bind-button"
+          :disabled="auth.githubLoading"
+          @click="bindGitHub"
+        >
+          {{ auth.githubLoading ? '打开中...' : '绑定 GitHub 账号' }}
+        </button>
+      </section>
+
       <!-- Upgrade Reminder for Basic Users -->
       <div v-if="!auth.isPlus && showReminder" class="reminder-banner">
         <div class="reminder-content">
@@ -759,6 +774,37 @@ onUnmounted(() => {
   margin: 0;
 }
 
+.account-bind-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding: 18px 20px;
+  background-color: rgba(47, 129, 247, 0.08);
+  border: 1px solid rgba(47, 129, 247, 0.28);
+  border-radius: 12px;
+}
+
+.account-bind-title {
+  margin: 0 0 6px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #E6EDF3;
+}
+
+.account-bind-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #8B949E;
+}
+
+.account-bind-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 /* Nav Grid */
 .nav-grid {
   display: flex;
@@ -1016,6 +1062,11 @@ onUnmounted(() => {
 
   .home-main {
     padding: 32px 16px;
+  }
+
+  .account-bind-card {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .nav-card {

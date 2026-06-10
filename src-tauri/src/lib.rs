@@ -284,12 +284,28 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
+fn forward_oauth_callback(app: &tauri::AppHandle, url: &str) {
+    if !url.starts_with("biliassist://auth/callback") {
+        return;
+    }
+
+    log::info!("Forwarding OAuth callback to frontend: {}", url);
+    let _ = app.emit("oauth-callback", url.to_string());
+    show_main_window(app);
+}
+
 pub fn run() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .init();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            log::info!("Received second instance argv: {:?}", argv);
+            for arg in argv {
+                forward_oauth_callback(app, &arg);
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(
@@ -339,9 +355,8 @@ pub fn run() {
                 let urls = event.urls();
                 log::info!("Received deep-link callback: {:?}", urls);
                 for url in urls {
-                    let _ = app_handle.emit("oauth-callback", url.to_string());
+                    forward_oauth_callback(&app_handle, url.as_str());
                 }
-                show_main_window(&app_handle);
             });
 
             // \u{68c0}\u{6d4b}\u{662f}\u{5426}\u{7531}\u{5f00}\u{673a}\u{81ea}\u{542f}\u{542f}\u{52a8}
