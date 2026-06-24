@@ -68,7 +68,11 @@ pub trait MessageHandler: Send + Sync {
             return;
         }
 
-        let like_key = format!("like:reply_action:{}:{}", self.source_type().id(), message.id);
+        let like_key = format!(
+            "like:reply_action:{}:{}",
+            self.source_type().id(),
+            message.id
+        );
         if state.is_liked(&like_key).await {
             return;
         }
@@ -204,19 +208,12 @@ pub trait MessageHandler: Send + Sync {
         let mut result = HandleResult::default();
 
         for message in messages {
-            let dedup_key = format!("{}:{}", self.source_type().id(), message.id);
-            let already_replied_on_bilibili = message.extra_data["already_replied"]
-                .as_bool()
-                .unwrap_or(false);
-
-            if already_replied_on_bilibili || state.is_replied(&dedup_key).await {
-                self.like_comment_if_needed(account, &message, state, &mut result)
-                    .await;
-                if result.stopped_by_rate_limit {
-                    break;
-                }
-                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            self.like_comment_if_needed(account, &message, state, &mut result)
+                .await;
+            if result.stopped_by_rate_limit {
+                break;
             }
+            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
         }
 
         Ok(result)
@@ -291,5 +288,116 @@ impl HandlerRegistry {
 impl Default for HandlerRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auto_reply::state::AutoReplyState;
+    use crate::bilibili::UserInfo;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+
+    struct MockCommentHandler {
+        liked: Arc<AtomicUsize>,
+        messages: Vec<Message>,
+    }
+
+    #[async_trait]
+    impl MessageHandler for MockCommentHandler {
+        fn name(&self) -> &'static str {
+            "mock"
+        }
+
+        fn source_type(&self) -> MsgSource {
+            MsgSource::Comment
+        }
+
+        async fn fetch_messages(&self, _account: &UserInfo) -> Result<Vec<Message>, String> {
+            Ok(self.messages.clone())
+        }
+
+        async fn send_reply(
+            &self,
+            _account: &UserInfo,
+            _message: &Message,
+            _reply_msg: &str,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+
+        async fn on_reply_success(
+            &self,
+            _account: &UserInfo,
+            _message: &Message,
+            _state: &AutoReplyState,
+        ) -> Result<(), String> {
+            self.liked.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    fn temp_data_dir(name: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("bilibili-account-manager-{name}-{nanos}"))
+    }
+
+    fn test_account() -> UserInfo {
+        UserInfo {
+            uid: "1".to_string(),
+            name: "tester".to_string(),
+            avatar: String::new(),
+            cookie: "SESSDATA=x; bili_jct=y; DedeUserID=1".to_string(),
+        }
+    }
+
+    fn comment_message(id: &str, already_replied: bool) -> Message {
+        Message {
+            id: id.to_string(),
+            user_id: "2".to_string(),
+            user_name: "commenter".to_string(),
+            content: Some("hello".to_string()),
+            extra_data: serde_json::json!({
+                "already_replied": already_replied,
+                "aid": 1,
+                "rpid": 2,
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn likes_new_comments_when_only_like_comments_is_enabled() {
+        let data_dir = temp_data_dir("likes-new-comments");
+        let state = AutoReplyState::new_for_test(data_dir.clone()).unwrap();
+        state
+            .update_settings(|settings| {
+                settings.enabled = false;
+                settings.like_comments = true;
+                settings.sources = Vec::new();
+            })
+            .await
+            .unwrap();
+
+        let liked = Arc::new(AtomicUsize::new(0));
+        let handler = MockCommentHandler {
+            liked: Arc::clone(&liked),
+            messages: vec![comment_message("1:2", false)],
+        };
+
+        let result = handler
+            .handle_likes_only(&test_account(), &state)
+            .await
+            .unwrap();
+
+        let _ = std::fs::remove_dir_all(data_dir);
+
+        assert_eq!(1, result.like_success_count);
+        assert_eq!(1, liked.load(Ordering::SeqCst));
     }
 }

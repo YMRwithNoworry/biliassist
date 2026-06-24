@@ -16,9 +16,11 @@ pub fn extract_csrf(cookie: &str) -> String {
             return pair.trim_start_matches("bili_jct=").to_string();
         }
     }
-    log::warn!("cookie 中未找到 bili_jct，cookie 长度: {}, 前100字符: {}",
+    log::warn!(
+        "cookie 中未找到 bili_jct，cookie 长度: {}, 前100字符: {}",
         cookie.len(),
-        &cookie[..cookie.len().min(100)]);
+        &cookie[..cookie.len().min(100)]
+    );
     String::new()
 }
 
@@ -28,6 +30,11 @@ pub async fn resp_to_json(resp: reqwest::Response) -> Result<serde_json::Value, 
         .text()
         .await
         .map_err(|e| format!("读取响应失败: {}", e))?;
-    serde_json::from_str(&text)
-        .map_err(|e| format!("解析JSON失败: {} | body={}", e, &text[..text.len().min(200)]))
+    serde_json::from_str(&text).map_err(|e| {
+        format!(
+            "解析JSON失败: {} | body={}",
+            e,
+            &text[..text.len().min(200)]
+        )
+    })
 }

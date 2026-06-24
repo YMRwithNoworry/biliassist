@@ -1,13 +1,13 @@
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use chrono::{FixedOffset, TimeZone, Utc};
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
+use chrono::{FixedOffset, TimeZone, Utc};
 use rand::Rng;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use crate::bilibili::UserInfo;
 
@@ -63,15 +63,12 @@ pub async fn init() {
 
 async fn get_encryption_key() -> Vec<u8> {
     let key_file = get_data_dir().join("key.bin");
-    tokio::fs::read(&key_file)
-        .await
-        .expect("无法读取加密密钥")
+    tokio::fs::read(&key_file).await.expect("无法读取加密密钥")
 }
 
 async fn encrypt_data(data: &[u8]) -> Result<Vec<u8>, String> {
     let key = get_encryption_key().await;
-    let cipher = Aes256Gcm::new_from_slice(&key)
-        .map_err(|e| format!("创建加密器失败: {}", e))?;
+    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| format!("创建加密器失败: {}", e))?;
 
     let mut nonce_bytes = [0u8; 12];
     let mut rng = rand::thread_rng();
@@ -94,8 +91,7 @@ async fn decrypt_data(encrypted: &[u8]) -> Result<Vec<u8>, String> {
     }
 
     let key = get_encryption_key().await;
-    let cipher = Aes256Gcm::new_from_slice(&key)
-        .map_err(|e| format!("创建解密器失败: {}", e))?;
+    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| format!("创建解密器失败: {}", e))?;
 
     let (nonce, ciphertext) = encrypted.split_at(12);
     let plaintext = cipher
@@ -200,8 +196,7 @@ async fn load_accounts_internal() -> Result<Vec<Account>, String> {
 }
 
 async fn save_accounts_internal(accounts: &[Account]) -> Result<(), String> {
-    let json = serde_json::to_string(accounts)
-        .map_err(|e| format!("序列化失败: {}", e))?;
+    let json = serde_json::to_string(accounts).map_err(|e| format!("序列化失败: {}", e))?;
     let encrypted = encrypt_data(json.as_bytes()).await?;
     let file_path = get_data_dir().join(ACCOUNTS_FILE);
     tokio::fs::write(&file_path, encrypted)

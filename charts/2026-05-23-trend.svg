@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="400" viewBox="0 0 760 400">
+<defs><linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#4f8ef7" stop-opacity="0.25"/><stop offset="100%" stop-color="#4f8ef7" stop-opacity="0.02"/></linearGradient><linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff9f43" stop-opacity="0.25"/><stop offset="100%" stop-color="#ff9f43" stop-opacity="0.02"/></linearGradient></defs>
+<rect width="760" height="400" rx="8" fill="#fff"/>
+<text x="380" y="24" text-anchor="middle" font-size="15" font-weight="bold" fill="#222">近 7 日数据趋势（播放 vs 互动）</text>
+<line x1="70" y1="345" x2="730" y2="345" stroke="#eee"/><text x="60" y="349" fill="#555" font-size="11" text-anchor="end">0</text>
+<line x1="70" y1="268.69649122807016" x2="730" y2="268.69649122807016" stroke="#eee"/><text x="60" y="272.69649122807016" fill="#555" font-size="11" text-anchor="end">713</text>
+<line x1="70" y1="192.5" x2="730" y2="192.5" stroke="#eee"/><text x="60" y="196.5" fill="#555" font-size="11" text-anchor="end">1425</text>
+<line x1="70" y1="116.19649122807016" x2="730" y2="116.19649122807016" stroke="#eee"/><text x="60" y="120.19649122807016" fill="#555" font-size="11" text-anchor="end">2138</text>
+<line x1="70" y1="40" x2="730" y2="40" stroke="#eee"/><text x="60" y="44" fill="#555" font-size="11" text-anchor="end">2850</text>
+<polygon points="70,345 70,40 180,345 290,345 400,345 510,345 620,345 730,345 730,345" fill="url(#g1)"/>
+<polygon points="70,345 70,40 180,345 290,345 400,345 510,345 620,345 730,345 730,345" fill="url(#g2)"/>
+<polyline points="70,40 180,345 290,345 400,345 510,345 620,345 730,345" fill="none" stroke="#4f8ef7" stroke-width="2.5" stroke-linecap="round"/>
+<polyline points="70,40 180,345 290,345 400,345 510,345 620,345 730,345" fill="none" stroke="#ff9f43" stroke-width="2.5" stroke-linecap="round"/>
+<circle cx="70" cy="40" r="4" fill="#4f8ef7" stroke="#fff" stroke-width="1.5"/>
+
+
+
+
+
+
+<circle cx="70" cy="40" r="4" fill="#ff9f43" stroke="#fff" stroke-width="1.5"/>
+
+
+
+
+
+
+<text x="70" y="385" fill="#555" font-size="11" text-anchor="middle">05-16</text>
+<text x="180" y="385" fill="#555" font-size="11" text-anchor="middle">05-17</text>
+<text x="290" y="385" fill="#555" font-size="11" text-anchor="middle">05-18</text>
+<text x="400" y="385" fill="#555" font-size="11" text-anchor="middle">05-19</text>
+<text x="510" y="385" fill="#555" font-size="11" text-anchor="middle">05-20</text>
+<text x="620" y="385" fill="#555" font-size="11" text-anchor="middle">05-21</text>
+<text x="730" y="385" fill="#555" font-size="11" text-anchor="middle">05-22</text>
+<circle cx="560" cy="24" r="5" fill="#4f8ef7"/><text x="570" y="28" font-size="12" fill="#333">播放</text>
+<circle cx="640" cy="24" r="5" fill="#ff9f43"/><text x="650" y="28" font-size="12" fill="#333">互动(赞+评+弹)</text>
+<line x1="70" y1="40" x2="70" y2="345" stroke="#ddd"/><line x1="70" y1="345" x2="730" y2="345" stroke="#ddd"/>
+</svg>

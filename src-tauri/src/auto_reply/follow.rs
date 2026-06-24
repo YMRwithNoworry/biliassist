@@ -1,7 +1,7 @@
-use crate::auto_reply::direct_message;
-use super::handler::{MessageHandler, Message};
+use super::handler::{Message, MessageHandler};
 use super::http::{get_http_client, resp_to_json};
 use super::models::MsgSource;
+use crate::auto_reply::direct_message;
 use crate::bilibili::UserInfo;
 use async_trait::async_trait;
 
@@ -52,7 +52,9 @@ impl MessageHandler for FollowHandler {
             let name = f["uname"].as_str().unwrap_or("").to_string();
             let uid = mid.to_string();
 
-            if mid == 0 { continue; }
+            if mid == 0 {
+                continue;
+            }
 
             messages.push(Message {
                 id: uid.clone(),
@@ -66,7 +68,12 @@ impl MessageHandler for FollowHandler {
         Ok(messages)
     }
 
-    async fn send_reply(&self, account: &UserInfo, message: &Message, reply_msg: &str) -> Result<(), String> {
+    async fn send_reply(
+        &self,
+        account: &UserInfo,
+        message: &Message,
+        reply_msg: &str,
+    ) -> Result<(), String> {
         direct_message::send_dm(account, &message.user_id, reply_msg).await
     }
 }

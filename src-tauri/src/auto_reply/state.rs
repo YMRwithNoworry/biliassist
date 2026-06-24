@@ -22,6 +22,10 @@ impl AutoReplyState {
             .ok_or("\u{65e0}\u{6cd5}\u{83b7}\u{53d6}\u{7528}\u{6237}\u{76ee}\u{5f55}")?
             .join(".bilibili_account_manager");
 
+        Self::with_data_dir(data_dir)
+    }
+
+    fn with_data_dir(data_dir: PathBuf) -> Result<Self, String> {
         std::fs::create_dir_all(&data_dir).map_err(|e| {
             format!(
                 "\u{521b}\u{5efa}\u{6570}\u{636e}\u{76ee}\u{5f55}\u{5931}\u{8d25}: {}",
@@ -35,6 +39,11 @@ impl AutoReplyState {
             liked_set: Arc::new(RwLock::new(HashSet::new())),
             data_dir,
         })
+    }
+
+    #[cfg(test)]
+    pub fn new_for_test(data_dir: PathBuf) -> Result<Self, String> {
+        Self::with_data_dir(data_dir)
     }
 
     /// \u{4ece}\u{6587}\u{4ef6}\u{52a0}\u{8f7d}\u{8bbe}\u{7f6e}

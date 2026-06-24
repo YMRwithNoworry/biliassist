@@ -1,15 +1,11 @@
-use super::handler::{MessageHandler, Message, generate_dev_id};
-use super::http::{get_http_client, resp_to_json, extract_csrf};
+use super::handler::{generate_dev_id, Message, MessageHandler};
+use super::http::{extract_csrf, get_http_client, resp_to_json};
 use super::models::MsgSource;
 use crate::bilibili::UserInfo;
 use async_trait::async_trait;
 
 /// 发送私信（公共函数，供关注处理器复用）
-pub async fn send_dm(
-    account: &UserInfo,
-    uid: &str,
-    msg: &str,
-) -> Result<(), String> {
+pub async fn send_dm(account: &UserInfo, uid: &str, msg: &str) -> Result<(), String> {
     let csrf = extract_csrf(&account.cookie);
     if csrf.is_empty() {
         return Err("cookie 中缺少 bili_jct (CSRF token)".to_string());
@@ -115,8 +111,12 @@ impl MessageHandler for DirectMessageHandler {
             let name = talker_id.to_string();
             let uid = talker_id.to_string();
 
-            if talker_id == 0 { continue; }
-            if unread_count == 0 { continue; }
+            if talker_id == 0 {
+                continue;
+            }
+            if unread_count == 0 {
+                continue;
+            }
 
             messages.push(Message {
                 id: uid.clone(),
@@ -130,7 +130,12 @@ impl MessageHandler for DirectMessageHandler {
         Ok(messages)
     }
 
-    async fn send_reply(&self, account: &UserInfo, message: &Message, reply_msg: &str) -> Result<(), String> {
+    async fn send_reply(
+        &self,
+        account: &UserInfo,
+        message: &Message,
+        reply_msg: &str,
+    ) -> Result<(), String> {
         send_dm(account, &message.user_id, reply_msg).await
     }
 }

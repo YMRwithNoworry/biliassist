@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
-use chrono::Utc;
 use crate::auto_reply::http::{get_http_client, resp_to_json};
+use chrono::Utc;
 
 const MIXIN_KEY_ENC_TAB: [u8; 32] = [
-    46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35,
-    27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13,
+    46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49, 33, 9, 42, 19, 29,
+    28, 14, 39, 12, 38, 41, 13,
 ];
 
 fn get_mixin_key(orig: &str) -> String {
@@ -43,23 +43,33 @@ pub async fn get_wbi_keys(cookie: &str) -> Result<(String, String), String> {
     let json = resp_to_json(resp).await?;
 
     if json["code"] != 0 {
-        log::error!("获取WBI keys失败: code={}, msg={}", json["code"], json["message"]);
+        log::error!(
+            "获取WBI keys失败: code={}, msg={}",
+            json["code"],
+            json["message"]
+        );
         return Err(format!("获取WBI keys失败: {}", json["message"]));
     }
 
-    let img_url = json["data"]["wbi_img"]["img_url"]
-        .as_str()
-        .unwrap_or("");
-    let sub_url = json["data"]["wbi_img"]["sub_url"]
-        .as_str()
-        .unwrap_or("");
+    let img_url = json["data"]["wbi_img"]["img_url"].as_str().unwrap_or("");
+    let sub_url = json["data"]["wbi_img"]["sub_url"].as_str().unwrap_or("");
 
     let img_key = extract_wbi_key(img_url);
     let sub_key = extract_wbi_key(sub_url);
 
-    log::info!("获取WBI keys成功: img_key={}, sub_key={}",
-        if img_key.len() > 8 { &img_key[..8] } else { &img_key },
-        if sub_key.len() > 8 { &sub_key[..8] } else { &sub_key });
+    log::info!(
+        "获取WBI keys成功: img_key={}, sub_key={}",
+        if img_key.len() > 8 {
+            &img_key[..8]
+        } else {
+            &img_key
+        },
+        if sub_key.len() > 8 {
+            &sub_key[..8]
+        } else {
+            &sub_key
+        }
+    );
 
     Ok((img_key, sub_key))
 }
@@ -104,7 +114,8 @@ pub fn sign_wbi_params(
 
     map.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let query: String = map.iter()
+    let query: String = map
+        .iter()
         .map(|(k, v)| format!("{}={}", k, url_encode(v)))
         .collect::<Vec<_>>()
         .join("&");

@@ -1,8 +1,8 @@
+use base64::{engine::general_purpose, Engine as _};
+use qrcode::QrCode;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
-use qrcode::QrCode;
-use base64::{Engine as _, engine::general_purpose};
 
 static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
 
@@ -48,7 +48,10 @@ pub async fn get_qr_code() -> Result<QrCodeResponse, String> {
         .await
         .map_err(|e| format!("请求失败: {}", e))?;
 
-    let text = response.text().await.map_err(|e| format!("读取失败: {}", e))?;
+    let text = response
+        .text()
+        .await
+        .map_err(|e| format!("读取失败: {}", e))?;
     let json: serde_json::Value = serde_json::from_str(&text)
         .map_err(|e| format!("解析失败: {} | body={}", e, &text[..text.len().min(200)]))?;
 
@@ -57,13 +60,19 @@ pub async fn get_qr_code() -> Result<QrCodeResponse, String> {
     }
 
     let qr_url = json["data"]["url"].as_str().ok_or("二维码URL不存在")?;
-    let qrcode_key = json["data"]["qrcode_key"].as_str().ok_or("二维码key不存在")?;
+    let qrcode_key = json["data"]["qrcode_key"]
+        .as_str()
+        .ok_or("二维码key不存在")?;
 
     // 生成二维码图片
     let code = QrCode::new(qr_url).map_err(|e| format!("生成二维码失败: {}", e))?;
     let image = code.render::<image::Luma<u8>>().build();
     let mut buffer = Vec::new();
-    image.write_to(&mut std::io::Cursor::new(&mut buffer), image::ImageFormat::Png)
+    image
+        .write_to(
+            &mut std::io::Cursor::new(&mut buffer),
+            image::ImageFormat::Png,
+        )
         .map_err(|e| format!("编码PNG失败: {}", e))?;
 
     let base64_qrcode = general_purpose::STANDARD.encode(&buffer);
@@ -93,7 +102,8 @@ pub async fn check_login_status() -> Result<LoginStatus, String> {
         .map_err(|e| format!("请求失败: {}", e))?;
 
     // 提取 Set-Cookie headers
-    let set_cookies: Vec<String> = response.headers()
+    let set_cookies: Vec<String> = response
+        .headers()
         .get_all("set-cookie")
         .iter()
         .filter_map(|v| v.to_str().ok())
@@ -104,7 +114,10 @@ pub async fn check_login_status() -> Result<LoginStatus, String> {
         .filter(|s| !s.is_empty())
         .collect();
 
-    let text = response.text().await.map_err(|e| format!("读取失败: {}", e))?;
+    let text = response
+        .text()
+        .await
+        .map_err(|e| format!("读取失败: {}", e))?;
     let json: serde_json::Value = serde_json::from_str(&text)
         .map_err(|e| format!("解析失败: {} | body={}", e, &text[..text.len().min(300)]))?;
 
@@ -119,7 +132,11 @@ pub async fn check_login_status() -> Result<LoginStatus, String> {
 
     // 内层 data.code 表示扫码状态
     let inner_code = json["data"]["code"].as_i64().unwrap_or(-1);
-    log::info!("poll 状态: outer_code={}, inner_code={}", outer_code, inner_code);
+    log::info!(
+        "poll 状态: outer_code={}, inner_code={}",
+        outer_code,
+        inner_code
+    );
 
     match inner_code {
         86101 => Ok(LoginStatus {
@@ -134,7 +151,8 @@ pub async fn check_login_status() -> Result<LoginStatus, String> {
             // 登录成功
             // 从 poll 响应的 data.url 中提取关键 cookie 参数
             // URL 格式: https://passport.bilibili.com/login?SESSDATA=xxx&bili_jct=xxx&DedeUserID=xxx
-            let url_cookies = json["data"]["url"].as_str()
+            let url_cookies = json["data"]["url"]
+                .as_str()
                 .map(|u| extract_cookies_from_url(u))
                 .unwrap_or_default();
 
@@ -167,7 +185,8 @@ fn extract_cookies_from_url(url: &str) -> Vec<String> {
     let query = url.split('?').nth(1).unwrap_or("");
     let important_keys = ["SESSDATA", "bili_jct", "DedeUserID", "DedeUserID__ckMd5"];
 
-    query.split('&')
+    query
+        .split('&')
         .filter_map(|pair| {
             let mut parts = pair.splitn(2, '=');
             let key = parts.next()?;
@@ -218,7 +237,8 @@ async fn get_user_info(extra_cookies: &[String]) -> Result<UserInfo, String> {
         .map_err(|e| format!("请求失败: {}", e))?;
 
     // 从这个请求的响应中也提取 Set-Cookie
-    let nav_cookies: Vec<String> = response.headers()
+    let nav_cookies: Vec<String> = response
+        .headers()
         .get_all("set-cookie")
         .iter()
         .filter_map(|v| v.to_str().ok())
@@ -226,7 +246,10 @@ async fn get_user_info(extra_cookies: &[String]) -> Result<UserInfo, String> {
         .filter(|s| !s.is_empty())
         .collect();
 
-    let text = response.text().await.map_err(|e| format!("读取失败: {}", e))?;
+    let text = response
+        .text()
+        .await
+        .map_err(|e| format!("读取失败: {}", e))?;
     let json: serde_json::Value = serde_json::from_str(&text)
         .map_err(|e| format!("解析失败: {} | body={}", e, &text[..text.len().min(200)]))?;
 
@@ -245,7 +268,8 @@ async fn get_user_info(extra_cookies: &[String]) -> Result<UserInfo, String> {
 
     // 去重
     let mut seen = std::collections::HashSet::new();
-    let cookie_str: String = all_cookies.iter()
+    let cookie_str: String = all_cookies
+        .iter()
         .filter(|c| {
             let key = c.split('=').next().unwrap_or("");
             seen.insert(key.to_string())

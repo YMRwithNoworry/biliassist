@@ -86,7 +86,8 @@ impl AiReplyConfig {
     /// 获取回复提示词模板，若为空则返回默认模板
     pub fn effective_prompt_template(&self) -> String {
         if self.prompt_template.trim().is_empty() {
-            "用户「{用户名}」通过{来源}给你发了一条消息：「{消息内容}」\n请生成一条合适的回复。".to_string()
+            "用户「{用户名}」通过{来源}给你发了一条消息：「{消息内容}」\n请生成一条合适的回复。"
+                .to_string()
         } else {
             self.prompt_template.clone()
         }
@@ -116,7 +117,11 @@ impl AutoReplySettings {
             message: "感谢您的留言！我会尽快回复。".to_string(),
             interval: 60,
             reply_only_once: true,
-            sources: vec![MsgSource::Comment, MsgSource::DirectMessage, MsgSource::Follow],
+            sources: vec![
+                MsgSource::Comment,
+                MsgSource::DirectMessage,
+                MsgSource::Follow,
+            ],
             history: Vec::new(),
             like_comments: true,
             ai: AiReplyConfig::default(),

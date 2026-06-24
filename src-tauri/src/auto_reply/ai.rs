@@ -1,4 +1,4 @@
-﻿use super::models::AiReplyConfig;
+use super::models::AiReplyConfig;
 use serde::{Deserialize, Serialize};
 
 /// OpenAI 兼容的聊天完成请求
@@ -56,7 +56,14 @@ pub async fn generate_reply(
     let prompt_template = config.effective_prompt_template();
     let user_prompt = prompt_template
         .replace("{用户名}", user_name)
-        .replace("{消息内容}", if user_message.is_empty() { "(无内容)" } else { user_message })
+        .replace(
+            "{消息内容}",
+            if user_message.is_empty() {
+                "(无内容)"
+            } else {
+                user_message
+            },
+        )
         .replace("{来源}", source_name);
 
     let request = ChatRequest {
