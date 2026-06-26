@@ -25,7 +25,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: 准备 Pages 资源
         run: |
@@ -33,15 +33,15 @@ jobs:
           echo "已复制 docs 到 _site"
 
       - name: 配置 Pages
-        uses: actions/configure-pages@v4
+        uses: actions/configure-pages@v6
         with:
           enablement: true
 
       - name: 上传资源
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
       - name: 部署到 Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
