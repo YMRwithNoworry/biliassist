@@ -64,10 +64,25 @@ impl MsgSource {
     }
 }
 
+/// AI 服务的请求与响应协议格式。
+///
+/// 缺失该字段的旧配置会继续使用 OpenAI Chat Completions，保持原有行为。
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AiApiFormat {
+    #[default]
+    OpenAiChatCompletions,
+    OpenAiCompletions,
+    OpenAiResponses,
+    AnthropicMessages,
+}
+
 /// 共享的 AI 服务连接配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiProviderConfig {
+    #[serde(default)]
+    pub api_format: AiApiFormat,
     #[serde(default = "default_ai_base_url")]
     pub base_url: String,
     #[serde(default = "default_ai_model")]
@@ -79,6 +94,7 @@ pub struct AiProviderConfig {
 impl Default for AiProviderConfig {
     fn default() -> Self {
         Self {
+            api_format: AiApiFormat::default(),
             base_url: default_ai_base_url(),
             model: default_ai_model(),
             api_key: String::new(),
@@ -104,6 +120,8 @@ pub struct ChannelAiConfig {
 pub struct AiReplyConfig {
     #[serde(default)]
     pub enabled: bool,
+    #[serde(default)]
+    pub api_format: AiApiFormat,
     #[serde(default = "default_ai_base_url")]
     pub base_url: String,
     #[serde(default = "default_ai_model")]
@@ -120,6 +138,7 @@ impl Default for AiReplyConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            api_format: AiApiFormat::default(),
             base_url: default_ai_base_url(),
             model: default_ai_model(),
             api_key: String::new(),
@@ -133,6 +152,7 @@ impl AiReplyConfig {
     pub fn from_parts(provider: &AiProviderConfig, channel: &ChannelAiConfig) -> Self {
         Self {
             enabled: channel.enabled,
+            api_format: provider.api_format,
             base_url: provider.base_url.clone(),
             model: provider.model.clone(),
             api_key: provider.api_key.clone(),
@@ -143,6 +163,7 @@ impl AiReplyConfig {
 
     fn provider(&self) -> AiProviderConfig {
         AiProviderConfig {
+            api_format: self.api_format,
             base_url: self.base_url.clone(),
             model: self.model.clone(),
             api_key: self.api_key.clone(),
@@ -435,6 +456,10 @@ mod tests {
         let settings: AutoReplySettings = serde_json::from_value(legacy).unwrap();
 
         assert_eq!(15, settings.interval);
+        assert_eq!(
+            AiApiFormat::OpenAiChatCompletions,
+            settings.ai_provider.api_format
+        );
         assert_eq!("https://example.com/v1", settings.ai_provider.base_url);
         assert!(settings.channels.comment.reply.enabled);
         assert!(settings.channels.direct_message.enabled);
@@ -465,6 +490,7 @@ mod tests {
     #[test]
     fn round_trips_channel_settings() {
         let mut settings = AutoReplySettings::default();
+        settings.ai_provider.api_format = AiApiFormat::AnthropicMessages;
         settings.channels.comment.reply.message = "评论回复".to_string();
         settings.channels.direct_message.message = "私信回复".to_string();
         settings.channels.follow.message = "关注回复".to_string();
@@ -472,6 +498,10 @@ mod tests {
         let json = serde_json::to_string(&settings).unwrap();
         let decoded: AutoReplySettings = serde_json::from_str(&json).unwrap();
 
+        assert_eq!(
+            AiApiFormat::AnthropicMessages,
+            decoded.ai_provider.api_format
+        );
         assert_eq!("评论回复", decoded.channels.comment.reply.message);
         assert_eq!("私信回复", decoded.channels.direct_message.message);
         assert_eq!("关注回复", decoded.channels.follow.message);

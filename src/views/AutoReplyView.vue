@@ -98,10 +98,25 @@
             <div class="preset-group" aria-label="AI 服务预设">
               <button type="button" @click="applyPreset('deepseek')">DeepSeek</button>
               <button type="button" @click="applyPreset('openai')">OpenAI</button>
+              <button type="button" @click="applyPreset('anthropic')">Anthropic</button>
               <button type="button" @click="applyPreset('ollama')">Ollama</button>
             </div>
 
             <div class="provider-grid">
+              <div class="form-field">
+                <label for="ai-api-format">接口格式</label>
+                <select
+                  id="ai-api-format"
+                  v-model="settings.aiProvider.apiFormat"
+                  @change="save"
+                >
+                  <option value="openAiChatCompletions">OpenAI Chat Completions</option>
+                  <option value="openAiCompletions">OpenAI Completions</option>
+                  <option value="openAiResponses">OpenAI Responses</option>
+                  <option value="anthropicMessages">Anthropic Messages</option>
+                </select>
+              </div>
+
               <div class="form-field wide-field">
                 <label for="ai-base-url">API Base URL</label>
                 <input
@@ -390,6 +405,7 @@ const createSettings = () => ({
   enabled: true,
   interval: 60,
   aiProvider: {
+    apiFormat: 'openAiChatCompletions',
     baseUrl: DEFAULT_AI_BASE_URL,
     model: DEFAULT_AI_MODEL,
     apiKey: '',
@@ -496,6 +512,7 @@ const normalizeSettings = (raw = {}) => {
     enabled: raw.enabled ?? true,
     interval: raw.interval ?? 60,
     aiProvider: {
+      apiFormat: raw.aiProvider?.apiFormat || legacyAi.apiFormat || 'openAiChatCompletions',
       baseUrl: raw.aiProvider?.baseUrl || legacyAi.baseUrl || DEFAULT_AI_BASE_URL,
       model: raw.aiProvider?.model || legacyAi.model || DEFAULT_AI_MODEL,
       apiKey: raw.aiProvider?.apiKey || legacyAi.apiKey || '',
@@ -568,9 +585,26 @@ const saveInterval = () => {
 
 const applyPreset = (provider) => {
   const presets = {
-    deepseek: { baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash' },
-    openai: { baseUrl: DEFAULT_AI_BASE_URL, model: DEFAULT_AI_MODEL },
-    ollama: { baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5:7b' },
+    deepseek: {
+      apiFormat: 'openAiChatCompletions',
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-v4-flash',
+    },
+    openai: {
+      apiFormat: 'openAiChatCompletions',
+      baseUrl: DEFAULT_AI_BASE_URL,
+      model: DEFAULT_AI_MODEL,
+    },
+    anthropic: {
+      apiFormat: 'anthropicMessages',
+      baseUrl: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-4-20250514',
+    },
+    ollama: {
+      apiFormat: 'openAiChatCompletions',
+      baseUrl: 'http://localhost:11434/v1',
+      model: 'qwen2.5:7b',
+    },
   }
   const preset = presets[provider]
   if (!preset) return
@@ -650,16 +684,17 @@ onMounted(load)
 <style scoped>
 .auto-reply-page {
   min-height: 100vh;
-  background: #f4f6f8;
-  color: #20252b;
+  background: #0D1117;
+  color: #E6EDF3;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
 }
 
 .page-header {
   position: sticky;
   top: 0;
   z-index: 20;
-  border-bottom: 1px solid #dfe3e8;
-  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid #30363D;
+  background: rgba(22, 27, 34, 0.96);
   backdrop-filter: blur(12px);
 }
 
@@ -690,29 +725,29 @@ onMounted(load)
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
-  color: #424a53;
+  color: #C9D1D9;
   cursor: pointer;
 }
 
 .icon-button:hover,
 .field-icon-button:hover {
-  border-color: #d7dce1;
-  background: #f1f3f5;
+  border-color: #484F58;
+  background: #21262D;
 }
 
 .save-state {
   min-width: 64px;
-  color: #68717c;
+  color: #8B949E;
   font-size: 13px;
   text-align: right;
 }
 
 .save-state.saved {
-  color: #16794b;
+  color: #3FB950;
 }
 
 .save-state.error {
-  color: #b42318;
+  color: #F85149;
 }
 
 .page-main {
@@ -726,10 +761,10 @@ onMounted(load)
 .access-panel,
 .loading-panel,
 .error-panel {
-  border: 1px solid #dfe3e8;
+  border: 1px solid #30363D;
   border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 1px 2px rgba(22, 29, 37, 0.04);
+  background: #161B22;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
 }
 
 .surface-section {
@@ -737,7 +772,7 @@ onMounted(load)
 }
 
 .surface-section + .surface-section {
-  border-top: 1px solid #e5e8eb;
+  border-top: 1px solid #30363D;
 }
 
 .section-heading {
@@ -761,7 +796,7 @@ onMounted(load)
 .channel-title-row p,
 .access-panel p {
   margin: 5px 0 0;
-  color: #68717c;
+  color: #8B949E;
   font-size: 13px;
   line-height: 1.5;
 }
@@ -770,9 +805,9 @@ onMounted(load)
   display: grid;
   gap: 1px;
   overflow: hidden;
-  border: 1px solid #e1e5e9;
+  border: 1px solid #30363D;
   border-radius: 8px;
-  background: #e1e5e9;
+  background: #30363D;
 }
 
 .setting-row {
@@ -782,7 +817,7 @@ onMounted(load)
   min-height: 66px;
   gap: 24px;
   padding: 14px 16px;
-  background: #ffffff;
+  background: #161B22;
 }
 
 .setting-copy {
@@ -797,7 +832,7 @@ onMounted(load)
 }
 
 .setting-copy span {
-  color: #68717c;
+  color: #8B949E;
   font-size: 12px;
   line-height: 1.45;
 }
@@ -820,7 +855,7 @@ onMounted(load)
   position: absolute;
   inset: 0;
   border-radius: 999px;
-  background: #b9c0c8;
+  background: #484F58;
   cursor: pointer;
   transition: background-color 0.18s ease;
 }
@@ -832,14 +867,14 @@ onMounted(load)
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(18, 26, 34, 0.25);
+  background: #E6EDF3;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   content: '';
   transition: transform 0.18s ease;
 }
 
 .toggle input:checked + .toggle-track {
-  background: #1681c4;
+  background: #2F81F7;
 }
 
 .toggle input:checked + .toggle-track::after {
@@ -847,7 +882,7 @@ onMounted(load)
 }
 
 .toggle input:focus-visible + .toggle-track {
-  outline: 3px solid rgba(22, 129, 196, 0.22);
+  outline: 3px solid rgba(47, 129, 247, 0.3);
   outline-offset: 2px;
 }
 
@@ -861,7 +896,7 @@ onMounted(load)
 
 .compact-field label,
 .form-field label {
-  color: #343b43;
+  color: #C9D1D9;
   font-size: 13px;
   font-weight: 600;
 }
@@ -870,9 +905,9 @@ onMounted(load)
   display: flex;
   align-items: center;
   overflow: hidden;
-  border: 1px solid #cfd5db;
+  border: 1px solid #30363D;
   border-radius: 8px;
-  background: #ffffff;
+  background: #0D1117;
 }
 
 .number-control input {
@@ -890,9 +925,9 @@ onMounted(load)
   place-items: center;
   align-self: stretch;
   min-width: 42px;
-  border-left: 1px solid #dfe3e8;
-  background: #f5f7f8;
-  color: #68717c;
+  border-left: 1px solid #30363D;
+  background: #21262D;
+  color: #8B949E;
   font-size: 12px;
 }
 
@@ -902,9 +937,9 @@ onMounted(load)
   grid-auto-flow: column;
   grid-auto-columns: minmax(88px, 1fr);
   overflow: hidden;
-  border: 1px solid #cfd5db;
+  border: 1px solid #30363D;
   border-radius: 8px;
-  background: #ffffff;
+  background: #0D1117;
 }
 
 .preset-group {
@@ -916,9 +951,9 @@ onMounted(load)
   min-height: 36px;
   padding: 7px 14px;
   border: 0;
-  border-left: 1px solid #dfe3e8;
-  background: #ffffff;
-  color: #424a53;
+  border-left: 1px solid #30363D;
+  background: #0D1117;
+  color: #C9D1D9;
   font: inherit;
   font-size: 13px;
   cursor: pointer;
@@ -931,12 +966,12 @@ onMounted(load)
 
 .preset-group button:hover,
 .segmented-control button:hover {
-  background: #f3f6f8;
+  background: #21262D;
 }
 
 .segmented-control button.active {
-  background: #e8f3fa;
-  color: #096a9f;
+  background: #1F6FEB;
+  color: #FFFFFF;
   font-weight: 600;
 }
 
@@ -961,13 +996,14 @@ onMounted(load)
 }
 
 .form-field input,
-.form-field textarea {
+.form-field textarea,
+.form-field select {
   box-sizing: border-box;
   width: 100%;
-  border: 1px solid #cfd5db;
+  border: 1px solid #30363D;
   border-radius: 8px;
-  background: #ffffff;
-  color: #20252b;
+  background: #0D1117;
+  color: #E6EDF3;
   font: inherit;
   font-size: 14px;
   letter-spacing: 0;
@@ -975,6 +1011,11 @@ onMounted(load)
 }
 
 .form-field input {
+  height: 40px;
+  padding: 0 12px;
+}
+
+.form-field select {
   height: 40px;
   padding: 0 12px;
 }
@@ -988,9 +1029,10 @@ onMounted(load)
 
 .form-field input:focus,
 .form-field textarea:focus,
+.form-field select:focus,
 .number-control:focus-within {
-  border-color: #1681c4;
-  box-shadow: 0 0 0 3px rgba(22, 129, 196, 0.13);
+  border-color: #2F81F7;
+  box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.18);
 }
 
 .input-with-action {
@@ -1008,7 +1050,7 @@ onMounted(load)
 }
 
 .field-hint {
-  color: #727b85;
+  color: #8B949E;
   font-size: 12px;
 }
 
@@ -1036,15 +1078,15 @@ onMounted(load)
 }
 
 .button.primary {
-  border-color: #1278b4;
-  background: #1681c4;
+  border-color: #1F6FEB;
+  background: #2F81F7;
   color: #ffffff;
 }
 
 .button.secondary {
-  border-color: #cfd5db;
-  background: #ffffff;
-  color: #343b43;
+  border-color: #30363D;
+  background: #21262D;
+  color: #C9D1D9;
 }
 
 .button:hover:not(:disabled) {
@@ -1068,7 +1110,7 @@ onMounted(load)
 
 .inline-result,
 .action-result {
-  color: #16794b;
+  color: #3FB950;
   font-size: 13px;
   line-height: 1.55;
   white-space: pre-wrap;
@@ -1076,16 +1118,16 @@ onMounted(load)
 
 .inline-result.error,
 .action-result.error {
-  color: #b42318;
+  color: #F85149;
 }
 
 .channel-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   overflow: hidden;
-  border: 1px solid #cfd5db;
+  border: 1px solid #30363D;
   border-radius: 8px;
-  background: #f5f7f8;
+  background: #0D1117;
 }
 
 .channel-tab {
@@ -1096,9 +1138,9 @@ onMounted(load)
   gap: 3px;
   padding: 9px 8px;
   border: 0;
-  border-left: 1px solid #dfe3e8;
+  border-left: 1px solid #30363D;
   background: transparent;
-  color: #424a53;
+  color: #C9D1D9;
   font: inherit;
   cursor: pointer;
 }
@@ -1113,18 +1155,18 @@ onMounted(load)
 }
 
 .channel-tab small {
-  color: #818a94;
+  color: #8B949E;
   font-size: 11px;
 }
 
 .channel-tab small.enabled {
-  color: #16794b;
+  color: #3FB950;
 }
 
 .channel-tab.active {
-  background: #ffffff;
-  box-shadow: inset 0 -3px #1681c4;
-  color: #096a9f;
+  background: #161B22;
+  box-shadow: inset 0 -3px #2F81F7;
+  color: #58A6FF;
 }
 
 .channel-panel {
@@ -1141,9 +1183,9 @@ onMounted(load)
 
 .channel-option-row {
   margin-top: 18px;
-  border: 1px solid #e1e5e9;
+  border: 1px solid #30363D;
   border-radius: 8px;
-  background: #f8fafb;
+  background: #21262D;
 }
 
 .channel-form-grid {
@@ -1153,7 +1195,7 @@ onMounted(load)
 .channel-ai-section {
   margin-top: 22px;
   padding-top: 20px;
-  border-top: 1px solid #e5e8eb;
+  border-top: 1px solid #30363D;
 }
 
 .channel-ai-section > .setting-row {
@@ -1174,17 +1216,17 @@ onMounted(load)
 
 .variable-row span {
   margin-right: 2px;
-  color: #727b85;
+  color: #8B949E;
   font-size: 12px;
 }
 
 .variable-row button {
   min-height: 28px;
   padding: 4px 8px;
-  border: 1px solid #cbdbe5;
+  border: 1px solid #30363D;
   border-radius: 6px;
-  background: #f1f7fb;
-  color: #096a9f;
+  background: #21262D;
+  color: #58A6FF;
   font: inherit;
   font-size: 12px;
   cursor: pointer;
@@ -1196,14 +1238,14 @@ onMounted(load)
   gap: 10px;
   margin-top: 22px;
   padding-top: 20px;
-  border-top: 1px solid #e5e8eb;
+  border-top: 1px solid #30363D;
 }
 
 .action-result {
   margin-top: 14px;
   padding: 12px 14px;
   border-left: 3px solid currentColor;
-  background: #f7f9fa;
+  background: #21262D;
 }
 
 .history-surface {
@@ -1222,8 +1264,8 @@ onMounted(load)
   height: 28px;
   padding: 0 8px;
   border-radius: 999px;
-  background: #eef1f3;
-  color: #59636e;
+  background: #21262D;
+  color: #C9D1D9;
   font-size: 12px;
   font-weight: 600;
 }
@@ -1233,7 +1275,7 @@ onMounted(load)
   place-items: center;
   min-height: 150px;
   gap: 8px;
-  color: #929aa3;
+  color: #8B949E;
   font-size: 13px;
 }
 
@@ -1243,7 +1285,7 @@ onMounted(load)
 
 .history-item {
   padding: 14px 0;
-  border-top: 1px solid #e8ebee;
+  border-top: 1px solid #30363D;
 }
 
 .history-item:first-child {
@@ -1265,13 +1307,13 @@ onMounted(load)
 
 .history-meta time {
   flex: 0 0 auto;
-  color: #818a94;
+  color: #8B949E;
   font-size: 11px;
 }
 
 .history-item p {
   margin: 7px 0 0;
-  color: #4a535d;
+  color: #C9D1D9;
   font-size: 13px;
   line-height: 1.55;
   overflow-wrap: anywhere;
@@ -1290,23 +1332,23 @@ onMounted(load)
 }
 
 .access-panel svg {
-  color: #d56a18;
+  color: #D29922;
 }
 
 .loading-panel,
 .error-panel {
-  color: #68717c;
+  color: #8B949E;
   font-size: 14px;
 }
 
 .error-panel strong {
-  color: #b42318;
+  color: #F85149;
 }
 
 .spinner {
   width: 24px;
   height: 24px;
-  color: #1681c4;
+  color: #2F81F7;
 }
 
 @keyframes spin {
