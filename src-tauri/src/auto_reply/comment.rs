@@ -650,7 +650,7 @@ impl MessageHandler for CommentHandler {
         state: &AutoReplyState,
     ) -> Result<(), String> {
         let settings = state.get_settings().await;
-        if !settings.like_comments {
+        if !settings.channels.comment.like_comments {
             return Ok(());
         }
         let aid = message.extra_data["aid"].as_u64().ok_or("缺少aid")?;

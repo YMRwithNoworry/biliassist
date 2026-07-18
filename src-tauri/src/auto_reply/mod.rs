@@ -8,7 +8,7 @@ pub mod models;
 pub mod state;
 pub mod wbi;
 
-pub use models::{AiReplyConfig, AutoReplySettings, MsgSource};
+pub use models::{AutoReplySettings, MsgSource};
 pub use state::get_global_state;
 
 use handler::HandlerRegistry;
@@ -34,7 +34,9 @@ impl AutoReplyService {
             let state = get_global_state();
             let settings = state.get_settings().await;
 
-            if !settings.enabled && !settings.like_comments {
+            let replies_enabled = settings.enabled && settings.channels.any_enabled();
+            let likes_enabled = settings.channels.comment.like_comments;
+            if !replies_enabled && !likes_enabled {
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                 continue;
             }
@@ -71,8 +73,8 @@ impl AutoReplyService {
             }
 
             if settings.enabled {
-                for source in &settings.sources {
-                    if let Some(handler) = self.registry.get_handler(source) {
+                for source in settings.enabled_sources() {
+                    if let Some(handler) = self.registry.get_handler(&source) {
                         match handler.handle(&account, state).await {
                             Ok(result) => {
                                 if result.success_count > 0
@@ -105,8 +107,8 @@ impl AutoReplyService {
                 }
             }
 
-            if settings.like_comments
-                && (!settings.enabled || !settings.sources.contains(&MsgSource::Comment))
+            if settings.channels.comment.like_comments
+                && (!settings.enabled || !settings.channels.comment.reply.enabled)
             {
                 if let Some(handler) = self.registry.get_handler(&MsgSource::Comment) {
                     match handler.handle_likes_only(&account, state).await {
@@ -152,7 +154,7 @@ impl AutoReplyService {
         let sources = if let Some(s) = source {
             vec![s]
         } else {
-            settings.sources.clone()
+            settings.enabled_sources()
         };
 
         let mut results = Vec::new();
@@ -209,17 +211,27 @@ pub async fn save_settings(new_settings: AutoReplySettings) -> Result<(), String
 pub async fn test_reply() -> Result<String, String> {
     let state = get_global_state();
     let settings = state.get_settings().await;
-    let formatted = handler::format_message(&settings.message, "\u{6d4b}\u{8bd5}\u{7528}\u{6237}");
+    let previews = MsgSource::ALL.map(|source| {
+        let formatted = handler::format_message(
+            &settings.channel(source).message,
+            "\u{6d4b}\u{8bd5}\u{7528}\u{6237}",
+        );
+        format!("{}: {}", source.display_name(), formatted)
+    });
     Ok(format!(
         "\u{6d4b}\u{8bd5}\u{56de}\u{590d}\u{5185}\u{5bb9}:\n{}",
-        formatted
+        previews.join("\n")
     ))
 }
 
 pub async fn test_ai_reply() -> Result<String, String> {
     let state = get_global_state();
     let settings = state.get_settings().await;
-    ai::test_ai_config(&settings.ai).await
+    let config = models::AiReplyConfig::from_parts(
+        &settings.ai_provider,
+        &models::ChannelAiConfig::default(),
+    );
+    ai::test_ai_config(&config).await
 }
 
 pub async fn manual_reply_comments() -> Result<String, String> {

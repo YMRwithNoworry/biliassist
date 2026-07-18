@@ -69,18 +69,13 @@ impl AutoReplyState {
             }
         };
 
-        let mut settings = self.settings.write().await;
-        settings.enabled = loaded.enabled;
-        settings.message = loaded.message;
-        settings.interval = loaded.interval;
-        settings.reply_only_once = loaded.reply_only_once;
-        settings.sources = loaded.sources;
-        settings.like_comments = loaded.like_comments;
-        settings.ai = loaded.ai;
-        if !loaded.history.is_empty() {
-            settings.history = loaded.history;
+        let history_count = loaded.history.len();
+        {
+            let mut settings = self.settings.write().await;
+            *settings = loaded;
         }
-        log::info!("\u{5df2}\u{52a0}\u{8f7d}\u{81ea}\u{52a8}\u{56de}\u{590d}\u{8bbe}\u{7f6e}\u{ff0c}\u{5386}\u{53f2}\u{8bb0}\u{5f55} {} \u{6761}", settings.history.len());
+        self.persist_settings().await;
+        log::info!("\u{5df2}\u{52a0}\u{8f7d}\u{81ea}\u{52a8}\u{56de}\u{590d}\u{8bbe}\u{7f6e}\u{ff0c}\u{5386}\u{53f2}\u{8bb0}\u{5f55} {} \u{6761}", history_count);
     }
 
     /// \u{4fdd}\u{5b58}\u{8bbe}\u{7f6e}\u{5230}\u{6587}\u{4ef6}
@@ -192,26 +187,37 @@ impl AutoReplyState {
         set.contains(key)
     }
 
-    /// \u{6807}\u{8bb0}\u{4e3a}\u{5df2}\u{56de}\u{590d}\u{ff08}\u{540c}\u{65f6}\u{6301}\u{4e45}\u{5316}\u{5230}\u{78c1}\u{76d8}\u{ff09}
-    pub async fn mark_replied(&self, key: String) {
+    /// 批量标记为已回复，仅在集合实际变化时写入磁盘。
+    pub async fn mark_replied_many(&self, keys: Vec<String>) {
+        let mut changed = false;
         {
             let mut set = self.replied_set.write().await;
             if set.len() >= REPLIED_SET_MAX {
                 set.clear();
                 log::warn!("\u{5df2}\u{56de}\u{590d}\u{96c6}\u{5408}\u{8d85}\u{8fc7}\u{4e0a}\u{9650}({})\u{ff0c}\u{5df2}\u{6e05}\u{7a7a}", REPLIED_SET_MAX);
+                changed = true;
             }
-            set.insert(key);
+            for key in keys {
+                changed |= set.insert(key);
+            }
         }
-        self.persist_replied_set().await;
+        if changed {
+            self.persist_replied_set().await;
+        }
     }
 
     /// \u{4ece}\u{5386}\u{53f2}\u{8bb0}\u{5f55}\u{4e2d}\u{68c0}\u{67e5}\u{662f}\u{5426}\u{5df2}\u{56de}\u{590d}\u{8fc7}\u{67d0}\u{7528}\u{6237}\u{ff08}\u{9488}\u{5bf9}\u{79c1}\u{4fe1}/\u{5173}\u{6ce8}\u{7684}\u{964d}\u{7ea7}\u{4fdd}\u{969c}\u{ff09}
-    pub async fn is_replied_in_history(&self, user_identifier: &str, source: &MsgSource) -> bool {
+    pub async fn is_replied_in_history(
+        &self,
+        user_id: &str,
+        user_name: &str,
+        source: &MsgSource,
+    ) -> bool {
         let settings = self.settings.read().await;
         settings
             .history
             .iter()
-            .any(|h| h.user == user_identifier && h.source == *source)
+            .any(|h| (h.user == user_id || h.user == user_name) && h.source == *source)
     }
 
     /// \u{6dfb}\u{52a0}\u{56de}\u{590d}\u{5386}\u{53f2}\u{8bb0}\u{5f55}

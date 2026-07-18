@@ -1,485 +1,591 @@
 <template>
   <div class="auto-reply-page">
-    <!-- Header -->
     <header class="page-header">
       <div class="header-content">
-        <button class="btn-back" @click="goBack">
+        <button class="icon-button" type="button" aria-label="返回首页" title="返回首页" @click="goBack">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M19 12H5M12 19l-7-7 7-7"/>
+            <path d="M19 12H5M12 19l-7-7 7-7" />
           </svg>
         </button>
-        <h1 class="header-title">自动回复</h1>
-        <div class="header-spacer"></div>
+        <h1>自动回复</h1>
+        <span class="save-state" :class="saveState">
+          {{ saveStateLabel }}
+        </span>
       </div>
     </header>
 
-    <!-- Main Content -->
     <main class="page-main">
-      <!-- Basic User Lock -->
-      <div v-if="!auth.isPlus" class="lock-card">
-        <div class="lock-icon">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#F0883E" stroke-width="1.5">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-          </svg>
-        </div>
-        <h2 class="lock-title">需要 Plus 等级</h2>
-        <p class="lock-desc">自动回复功能仅限 Plus 用户使用，请输入激活密钥升级</p>
-        <button class="lock-btn" @click="goBack">返回首页输入密钥</button>
-      </div>
+      <section v-if="!auth.isPlus" class="access-panel">
+        <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="3" y="11" width="18" height="11" rx="2" />
+          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+        </svg>
+        <h2>需要 Plus 等级</h2>
+        <p>自动回复功能仅限 Plus 用户使用。</p>
+        <button class="button primary" type="button" @click="goBack">返回首页输入密钥</button>
+      </section>
+
+      <section v-else-if="loading" class="loading-panel" aria-live="polite">
+        <span class="spinner" aria-hidden="true"></span>
+        <span>正在加载自动回复设置</span>
+      </section>
+
+      <section v-else-if="loadError" class="error-panel" role="alert">
+        <strong>设置加载失败</strong>
+        <span>{{ loadError }}</span>
+        <button class="button secondary" type="button" @click="load">重试</button>
+      </section>
 
       <template v-else>
-      <!-- Enable Toggle -->
-      <div class="card">
-        <div class="setting-row">
-          <div class="setting-info">
-            <div class="setting-title">启用自动回复</div>
-            <div class="setting-desc">开启后将自动回复粉丝消息</div>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" v-model="enabled" @change="save" />
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-      </div>
-
-      <!-- Autostart -->
-      <div class="card">
-        <div class="setting-row">
-          <div class="setting-info">
-            <div class="setting-title">开机自启</div>
-            <div class="setting-desc">系统启动后自动在后台运行</div>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" v-model="autostartEnabled" @change="toggleAutostart" />
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-      </div>
-
-      <!-- ==================== AI Reply Config ==================== -->
-      <div class="card ai-card">
-        <div class="card-header">
-          <h2 class="card-title">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 6px;">
-              <path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.57-3.25 3.92L12 22"/>
-              <path d="M12 2a4 4 0 0 0-4 4c0 1.95 1.4 3.57 3.25 3.92"/>
-              <path d="M4 13h16"/>
-              <path d="M6 9l-2 4"/>
-              <path d="M18 9l2 4"/>
-            </svg>
-            AI 智能回复
-          </h2>
-          <span class="ai-badge" :class="{ active: aiEnabled }">{{ aiEnabled ? '已启用' : '未启用' }}</span>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-info">
-            <div class="setting-title">启用 AI 生成</div>
-            <div class="setting-desc">使用 AI 根据消息内容生成个性化回复（不使用则按固定模板回复）</div>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" v-model="aiEnabled" @change="save" />
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-
-        <div v-show="aiEnabled" class="ai-config">
-
-          <!-- ===== 系统提示词 ===== -->
-          <div class="prompt-section">
-            <div class="prompt-section-header">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                <polyline points="14 2 14 8 20 8"/>
-                <line x1="16" y1="13" x2="8" y2="13"/>
-                <line x1="16" y1="17" x2="8" y2="17"/>
-                <polyline points="10 9 9 9 8 9"/>
-              </svg>
-              <span>系统提示词</span>
-              <span class="prompt-tag">设定 AI 角色</span>
-            </div>
-            <textarea
-              v-model="aiSystemPrompt"
-              class="textarea prompt-textarea"
-              rows="3"
-              placeholder="你是一个友善的B站UP主助手，负责回复粉丝的评论和私信……"
-              @blur="save"
-            ></textarea>
-            <div class="field-hint">定义 AI 的身份、语气和回复风格。留空则使用默认值。</div>
-          </div>
-
-          <!-- ===== 回复提示词模板 ===== -->
-          <div class="prompt-section prompt-section-primary">
-            <div class="prompt-section-header">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-              </svg>
-              <span>回复提示词模板</span>
-              <span class="prompt-tag highlight">每次回复都会调用</span>
-            </div>
-            <textarea
-              v-model="aiPromptTemplate"
-              class="textarea prompt-textarea"
-              rows="4"
-              placeholder="用户「{用户名}」通过{来源}给你发了一条消息：「{消息内容}&#10;请生成一条合适的回复。"
-              @blur="save"
-            ></textarea>
-            <div class="field-hint">
-              每次 AI 生成回复时，都会使用此模板并将变量替换为实际内容后发送给 AI。
-            </div>
-            <div class="template-vars">
-              <span class="var-label">可用变量：</span>
-              <button class="var-chip" @click="insertVar('用户名')" title="点击插入">{用户名}</button>
-              <button class="var-chip" @click="insertVar('消息内容')" title="点击插入">{消息内容}</button>
-              <button class="var-chip" @click="insertVar('来源')" title="点击插入">{来源}</button>
-            </div>
-          </div>
-
-          <!-- ===== API 配置 ===== -->
-          <div class="form-field">
-            <label class="field-label">API Base URL</label>
-            <input
-              type="text"
-              v-model="aiBaseUrl"
-              class="input"
-              placeholder="https://api.deepseek.com"
-              @blur="save"
-            />
-            <div class="field-hint">兼容 OpenAI 接口的服务地址，如 DeepSeek、OpenAI、Ollama 等</div>
-          </div>
-
-          <div class="form-field">
-            <label class="field-label">模型名称</label>
-            <input
-              type="text"
-              v-model="aiModel"
-              class="input"
-              placeholder="gpt-4o-mini"
-              @blur="save"
-            />
-            <div class="field-hint">例如 deepseek-v4-flash、gpt-4o-mini、qwen2.5:7b 等</div>
-          </div>
-
-          <div class="form-field">
-            <label class="field-label">API Key</label>
-            <div class="input-with-toggle">
-              <input
-                :type="showApiKey ? 'text' : 'password'"
-                v-model="aiApiKey"
-                class="input"
-                placeholder="sk-..."
-                @blur="save"
-              />
-              <button class="btn-toggle-key" @click="showApiKey = !showApiKey" type="button">
-                <svg v-if="!showApiKey" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-                </svg>
-                <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          <button class="btn btn-secondary btn-block" @click="testAiReply" :disabled="aiTesting">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-            </svg>
-            {{ aiTesting ? '测试中...' : '测试 AI 回复' }}
-          </button>
-          <div v-if="aiTestResult" class="ai-test-result" :class="{ error: aiTestError }">
-            {{ aiTestResult }}
-          </div>
-        </div>
-      </div>
-
-      <!-- Sources -->
-      <div class="card">
-        <div class="card-header">
-          <h2 class="card-title">回复来源</h2>
-        </div>
-        <div class="chips">
-          <button
-            class="chip"
-            :class="{ active: sources.includes('comment') }"
-            @click="toggleSource('comment')"
-          >
-            <svg v-if="sources.includes('comment')" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-            视频评论
-          </button>
-          <button
-            class="chip"
-            :class="{ active: sources.includes('directMessage') }"
-            @click="toggleSource('directMessage')"
-          >
-            <svg v-if="sources.includes('directMessage')" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-            私信
-          </button>
-          <button
-            class="chip"
-            :class="{ active: sources.includes('follow') }"
-            @click="toggleSource('follow')"
-          >
-            <svg v-if="sources.includes('follow')" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-            粉丝关注
-          </button>
-        </div>
-      </div>
-
-      <!-- Message Content (fallback template) -->
-      <div class="card">
-        <div class="card-header">
-          <h2 class="card-title">回复内容{{ aiEnabled ? '（AI 未启用时使用）' : '' }}</h2>
-        </div>
-        <div class="form-field">
-          <textarea
-            v-model="message"
-            class="textarea"
-            placeholder="输入自动回复内容..."
-            rows="4"
-            @blur="save"
-          ></textarea>
-          <div class="field-hint">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="12" y1="16" x2="12" y2="12"/>
-              <line x1="12" y1="8" x2="12.01" y2="8"/>
-            </svg>
-            支持变量：{用户名}、{时间}
-          </div>
-        </div>
-      </div>
-
-      <!-- Settings -->
-      <div class="card">
-        <div class="card-header">
-          <h2 class="card-title">回复设置</h2>
-        </div>
-        
-        <div class="setting-row">
-          <div class="setting-info">
-            <div class="setting-title">每个用户只回复一次</div>
-            <div class="setting-desc">避免重复发送消息给同一用户</div>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" v-model="replyOnlyOnce" @change="save" />
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-
-        <div class="setting-row" style="margin-top: 20px;">
-          <div class="setting-info">
-            <div class="setting-title">自动点赞评论</div>
-            <div class="setting-desc">回复评论后自动为该评论点赞</div>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" v-model="likeComments" @change="save" />
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-
-        <div class="form-field" style="margin-top: 20px;">
-          <label class="field-label">回复间隔（秒）</label>
-          <input
-            type="number"
-            v-model.number="interval"
-            class="input"
-            min="1"
-            max="3600"
-            @blur="save"
-          />
-        </div>
-      </div>
-
-      <!-- Actions -->
-      <div class="actions">
-        <button class="btn btn-secondary btn-block" @click="testReply">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
-          </svg>
-          测试回复
-        </button>
-        <button class="btn btn-primary btn-block" @click="manualReply">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-          </svg>
-          立即回复视频评论
-        </button>
-      </div>
-
-      <!-- History -->
-      <div class="card">
-        <div class="card-header">
-          <h2 class="card-title">回复记录</h2>
-          <span class="badge" v-if="history.length > 0">{{ history.length }}</span>
-        </div>
-        
-        <div v-if="history.length === 0" class="empty-state">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-          </svg>
-          <p>暂无回复记录</p>
-        </div>
-        
-        <div v-else class="history-list">
-          <div v-for="(r, i) in history" :key="i" class="history-item">
-            <div class="history-meta">
-              <div class="history-user">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                  <circle cx="12" cy="7" r="4"/>
-                </svg>
-                {{ r.user }}
+        <section class="settings-surface">
+          <div class="surface-section overview-section">
+            <div class="section-heading">
+              <div>
+                <h2>运行设置</h2>
+                <p>统一控制自动回复服务的运行状态和检查频率。</p>
               </div>
-              <span class="history-source" :class="r.source">
-                {{ sourceLabel(r.source) }}
+            </div>
+
+            <div class="setting-list">
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <strong>自动回复总开关</strong>
+                  <span>关闭后暂停三个渠道的回复；评论点赞仍按评论区设置执行。</span>
+                </div>
+                <label class="toggle">
+                  <input v-model="settings.enabled" type="checkbox" @change="save" />
+                  <span class="toggle-track"></span>
+                </label>
+              </div>
+
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <strong>开机自启</strong>
+                  <span>系统启动后在后台运行。</span>
+                </div>
+                <label class="toggle">
+                  <input v-model="autostartEnabled" type="checkbox" @change="toggleAutostart" />
+                  <span class="toggle-track"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="compact-field">
+              <label for="poll-interval">检查间隔</label>
+              <div class="number-control">
+                <input
+                  id="poll-interval"
+                  v-model.number="settings.interval"
+                  type="number"
+                  min="1"
+                  max="3600"
+                  inputmode="numeric"
+                  @change="saveInterval"
+                />
+                <span>秒</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="surface-section provider-section">
+            <div class="section-heading">
+              <div>
+                <h2>AI 服务</h2>
+                <p>接口、模型和密钥由三个回复渠道共用。</p>
+              </div>
+            </div>
+
+            <div class="preset-group" aria-label="AI 服务预设">
+              <button type="button" @click="applyPreset('deepseek')">DeepSeek</button>
+              <button type="button" @click="applyPreset('openai')">OpenAI</button>
+              <button type="button" @click="applyPreset('ollama')">Ollama</button>
+            </div>
+
+            <div class="provider-grid">
+              <div class="form-field wide-field">
+                <label for="ai-base-url">API Base URL</label>
+                <input
+                  id="ai-base-url"
+                  v-model.trim="settings.aiProvider.baseUrl"
+                  type="text"
+                  placeholder="https://api.openai.com/v1"
+                  @blur="save"
+                />
+              </div>
+
+              <div class="form-field">
+                <label for="ai-model">模型名称</label>
+                <input
+                  id="ai-model"
+                  v-model.trim="settings.aiProvider.model"
+                  type="text"
+                  placeholder="gpt-4o-mini"
+                  @blur="save"
+                />
+              </div>
+
+              <div class="form-field wide-field">
+                <label for="ai-api-key">API Key</label>
+                <div class="input-with-action">
+                  <input
+                    id="ai-api-key"
+                    v-model="settings.aiProvider.apiKey"
+                    :type="showApiKey ? 'text' : 'password'"
+                    placeholder="sk-..."
+                    autocomplete="off"
+                    @blur="save"
+                  />
+                  <button
+                    class="field-icon-button"
+                    type="button"
+                    :aria-label="showApiKey ? '隐藏 API Key' : '显示 API Key'"
+                    :title="showApiKey ? '隐藏 API Key' : '显示 API Key'"
+                    @click="showApiKey = !showApiKey"
+                  >
+                    <svg v-if="!showApiKey" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                    <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="m3 3 18 18M10.6 10.7a2 2 0 0 0 2.7 2.7M9.9 5.1A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a17.3 17.3 0 0 1-2.1 3.2M6.2 6.2C3.5 8.1 2 12 2 12s3.5 7 10 7a10.6 10.6 0 0 0 4.1-.8" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="inline-action-row">
+              <button class="button secondary" type="button" :disabled="aiTesting" @click="testAiReply">
+                <span v-if="aiTesting" class="button-spinner" aria-hidden="true"></span>
+                <svg v-else width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="m13 2-2 8h7l-7 12 2-8H6l7-12Z" />
+                </svg>
+                {{ aiTesting ? '测试中' : '测试 AI 服务' }}
+              </button>
+              <span v-if="aiTestResult" class="inline-result" :class="{ error: aiTestError }">
+                {{ aiTestResult }}
               </span>
             </div>
-            <p class="history-msg">{{ r.message }}</p>
-            <p class="history-time">{{ r.time }}</p>
           </div>
-        </div>
-      </div>
+
+          <div class="surface-section channel-section">
+            <div class="section-heading channel-heading">
+              <div>
+                <h2>分渠道配置</h2>
+                <p>回复内容、AI 提示词和回复策略互不影响。</p>
+              </div>
+            </div>
+
+            <div class="channel-tabs" role="tablist" aria-label="自动回复渠道">
+              <button
+                v-for="tab in channelTabs"
+                :id="`channel-tab-${tab.key}`"
+                :key="tab.key"
+                class="channel-tab"
+                :class="{ active: activeChannel === tab.key }"
+                type="button"
+                role="tab"
+                :aria-selected="activeChannel === tab.key"
+                :aria-controls="`channel-panel-${tab.key}`"
+                @click="activeChannel = tab.key"
+              >
+                <span>{{ tab.label }}</span>
+                <small :class="{ enabled: settings.channels[tab.key].enabled }">
+                  {{ settings.channels[tab.key].enabled ? '已开启' : '已关闭' }}
+                </small>
+              </button>
+            </div>
+
+            <div
+              :id="`channel-panel-${activeChannel}`"
+              class="channel-panel"
+              role="tabpanel"
+              :aria-labelledby="`channel-tab-${activeChannel}`"
+            >
+              <div class="channel-title-row">
+                <div>
+                  <h3>{{ activeChannelMeta.label }}</h3>
+                  <p>{{ activeChannelMeta.description }}</p>
+                </div>
+                <label class="toggle">
+                  <input v-model="currentChannel.enabled" type="checkbox" @change="save" />
+                  <span class="toggle-track"></span>
+                </label>
+              </div>
+
+              <div v-if="activeChannel === 'comment'" class="setting-row channel-option-row">
+                <div class="setting-copy">
+                  <strong>自动点赞评论</strong>
+                  <span>该开关可独立于评论自动回复运行。</span>
+                </div>
+                <label class="toggle">
+                  <input v-model="settings.channels.comment.likeComments" type="checkbox" @change="save" />
+                  <span class="toggle-track"></span>
+                </label>
+              </div>
+
+              <div class="channel-form-grid">
+                <div class="form-field full-width">
+                  <label>回复策略</label>
+                  <div class="segmented-control" role="group" :aria-label="`${activeChannelMeta.label}回复策略`">
+                    <button
+                      type="button"
+                      :class="{ active: currentChannel.replyPolicy === 'perMessage' }"
+                      @click="setReplyPolicy('perMessage')"
+                    >
+                      每条消息
+                    </button>
+                    <button
+                      type="button"
+                      :class="{ active: currentChannel.replyPolicy === 'oncePerUser' }"
+                      @click="setReplyPolicy('oncePerUser')"
+                    >
+                      每个用户一次
+                    </button>
+                  </div>
+                </div>
+
+                <div class="form-field full-width">
+                  <label :for="`${activeChannel}-message`">固定回复内容</label>
+                  <textarea
+                    :id="`${activeChannel}-message`"
+                    v-model="currentChannel.message"
+                    rows="4"
+                    placeholder="输入自动回复内容"
+                    @blur="save"
+                  ></textarea>
+                  <span class="field-hint">支持 {用户名}、{时间}</span>
+                </div>
+              </div>
+
+              <div class="channel-ai-section">
+                <div class="setting-row">
+                  <div class="setting-copy">
+                    <strong>使用 AI 生成回复</strong>
+                    <span>关闭时使用当前渠道的固定回复内容。</span>
+                  </div>
+                  <label class="toggle">
+                    <input v-model="currentChannel.ai.enabled" type="checkbox" @change="save" />
+                    <span class="toggle-track"></span>
+                  </label>
+                </div>
+
+                <div v-if="currentChannel.ai.enabled" class="ai-prompt-grid">
+                  <div class="form-field full-width">
+                    <label :for="`${activeChannel}-system-prompt`">系统提示词</label>
+                    <textarea
+                      :id="`${activeChannel}-system-prompt`"
+                      v-model="currentChannel.ai.systemPrompt"
+                      rows="3"
+                      placeholder="设定当前渠道的角色、语气和回复风格"
+                      @blur="save"
+                    ></textarea>
+                  </div>
+
+                  <div class="form-field full-width">
+                    <label :for="`${activeChannel}-prompt-template`">回复提示词模板</label>
+                    <textarea
+                      :id="`${activeChannel}-prompt-template`"
+                      v-model="currentChannel.ai.promptTemplate"
+                      rows="4"
+                      placeholder="用户「{用户名}」通过{来源}发来：「{消息内容}」"
+                      @blur="save"
+                    ></textarea>
+                    <div class="variable-row">
+                      <span>插入变量</span>
+                      <button type="button" @click="insertVar('用户名')">{用户名}</button>
+                      <button type="button" @click="insertVar('消息内容')">{消息内容}</button>
+                      <button type="button" @click="insertVar('来源')">{来源}</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="channel-actions">
+                <button class="button secondary" type="button" :disabled="previewRunning" @click="testReply">
+                  <span v-if="previewRunning" class="button-spinner" aria-hidden="true"></span>
+                  <svg v-else width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8Z" />
+                  </svg>
+                  预览全部模板
+                </button>
+                <button
+                  v-if="activeChannel === 'comment'"
+                  class="button primary"
+                  type="button"
+                  :disabled="manualRunning"
+                  @click="manualReply"
+                >
+                  <span v-if="manualRunning" class="button-spinner" aria-hidden="true"></span>
+                  <svg v-else width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="m13 2-2 8h7l-7 12 2-8H6l7-12Z" />
+                  </svg>
+                  立即处理视频评论
+                </button>
+              </div>
+
+              <div v-if="actionResult" class="action-result" :class="{ error: actionError }" role="status">
+                {{ actionResult }}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="history-surface">
+          <div class="section-heading history-heading">
+            <div>
+              <h2>{{ activeChannelMeta.label }}回复记录</h2>
+              <p>最近保存的当前渠道回复。</p>
+            </div>
+            <span class="count-badge">{{ channelHistory.length }}</span>
+          </div>
+
+          <div v-if="channelHistory.length === 0" class="empty-history">
+            <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8Z" />
+            </svg>
+            <span>暂无回复记录</span>
+          </div>
+
+          <div v-else class="history-list">
+            <article v-for="(item, index) in channelHistory" :key="`${item.time}-${index}`" class="history-item">
+              <div class="history-meta">
+                <strong>{{ item.user }}</strong>
+                <time>{{ item.time }}</time>
+              </div>
+              <p>{{ item.message }}</p>
+            </article>
+          </div>
+        </section>
       </template>
     </main>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { invoke } from '@tauri-apps/api/core'
 import { useAuthStore } from '../stores/auth'
 
+const DEFAULT_MESSAGE = '感谢您的留言！我会尽快回复。'
+const DEFAULT_AI_BASE_URL = 'https://api.openai.com/v1'
+const DEFAULT_AI_MODEL = 'gpt-4o-mini'
+
 const router = useRouter()
 const auth = useAuthStore()
 
-const enabled = ref(true)
-const message = ref('感谢您的留言！我会尽快回复。')
-const interval = ref(60)
-const replyOnlyOnce = ref(true)
-const likeComments = ref(true)
-const sources = ref(['comment', 'directMessage', 'follow'])
-const history = ref([])
-const autostartEnabled = ref(false)
+const createChannel = (replyPolicy) => ({
+  enabled: true,
+  message: DEFAULT_MESSAGE,
+  replyPolicy,
+  ai: {
+    enabled: false,
+    systemPrompt: '',
+    promptTemplate: '',
+  },
+})
 
-// AI 配置
-const aiEnabled = ref(false)
-const aiBaseUrl = ref('https://api.openai.com/v1')
-const aiModel = ref('gpt-4o-mini')
-const aiApiKey = ref('')
-const aiSystemPrompt = ref('')
-const aiPromptTemplate = ref('')
+const createSettings = () => ({
+  enabled: true,
+  interval: 60,
+  aiProvider: {
+    baseUrl: DEFAULT_AI_BASE_URL,
+    model: DEFAULT_AI_MODEL,
+    apiKey: '',
+  },
+  channels: {
+    comment: {
+      ...createChannel('perMessage'),
+      likeComments: true,
+    },
+    directMessage: createChannel('oncePerUser'),
+    follow: createChannel('oncePerUser'),
+  },
+  history: [],
+})
+
+const settings = reactive(createSettings())
+const activeChannel = ref('comment')
+const autostartEnabled = ref(false)
+const loading = ref(true)
+const loadError = ref('')
+const saveState = ref('idle')
 const showApiKey = ref(false)
 const aiTesting = ref(false)
 const aiTestResult = ref('')
 const aiTestError = ref(false)
+const previewRunning = ref(false)
+const manualRunning = ref(false)
+const actionResult = ref('')
+const actionError = ref(false)
 
-const applyPreset = (provider) => {
-  const presets = {
-    deepseek: { baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash' },
-    openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-    ollama: { baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5:7b' },
+let saveQueue = Promise.resolve()
+let saveVersion = 0
+let loaded = false
+
+const channelTabs = [
+  { key: 'comment', label: '评论区', description: '处理视频下的新评论。' },
+  { key: 'directMessage', label: '私信', description: '处理未读的一对一私信。' },
+  { key: 'follow', label: '关注', description: '向新关注用户发送欢迎私信。' },
+]
+
+const activeChannelMeta = computed(
+  () => channelTabs.find((tab) => tab.key === activeChannel.value) || channelTabs[0],
+)
+const currentChannel = computed(() => settings.channels[activeChannel.value])
+const channelHistory = computed(() =>
+  settings.history.filter((item) => item.source === activeChannel.value),
+)
+const saveStateLabel = computed(() => {
+  const labels = {
+    idle: '',
+    saving: '保存中',
+    saved: '已保存',
+    error: '保存失败',
   }
-  const p = presets[provider]
-  if (p) {
-    aiBaseUrl.value = p.baseUrl
-    aiModel.value = p.model
-    save()
-  }
+  return labels[saveState.value]
+})
+
+const errorMessage = (error, fallback) => {
+  if (typeof error === 'string') return error
+  return error?.message || fallback
 }
 
-const sourceLabel = (s) => {
-  const map = { comment: '评论', directMessage: '私信', follow: '关注' }
-  return map[s] || s
-}
+const normalizeChannel = (channel, fallbackPolicy, legacy) => ({
+  enabled: channel?.enabled ?? legacy.enabled,
+  message: channel?.message ?? legacy.message,
+  replyPolicy: channel?.replyPolicy ?? fallbackPolicy,
+  ai: {
+    enabled: channel?.ai?.enabled ?? legacy.ai.enabled,
+    systemPrompt: channel?.ai?.systemPrompt ?? legacy.ai.systemPrompt,
+    promptTemplate: channel?.ai?.promptTemplate ?? legacy.ai.promptTemplate,
+  },
+})
 
-const toggleSource = (src) => {
-  const idx = sources.value.indexOf(src)
-  if (idx >= 0) {
-    sources.value.splice(idx, 1)
-  } else {
-    sources.value.push(src)
+const normalizeSettings = (raw = {}) => {
+  const legacySources = raw.sources || ['comment', 'directMessage', 'follow']
+  const legacyAi = raw.ai || {}
+  const legacy = {
+    enabled: true,
+    message: raw.message || DEFAULT_MESSAGE,
+    ai: {
+      enabled: legacyAi.enabled ?? false,
+      systemPrompt: legacyAi.systemPrompt || '',
+      promptTemplate: legacyAi.promptTemplate || '',
+    },
   }
-  save()
-}
+  const oncePerUser = raw.replyOnlyOnce ?? true
 
-/** 在光标位置插入变量到回复提示词模板 */
-const insertVar = (varName) => {
-  const tag = `{${varName}}`
-  aiPromptTemplate.value += tag
-  save()
+  const comment = normalizeChannel(raw.channels?.comment, 'perMessage', {
+    ...legacy,
+    enabled: legacySources.includes('comment'),
+  })
+  const directMessage = normalizeChannel(
+    raw.channels?.directMessage,
+    oncePerUser ? 'oncePerUser' : 'perMessage',
+    { ...legacy, enabled: legacySources.includes('directMessage') },
+  )
+  const follow = normalizeChannel(
+    raw.channels?.follow,
+    oncePerUser ? 'oncePerUser' : 'perMessage',
+    { ...legacy, enabled: legacySources.includes('follow') },
+  )
+
+  return {
+    enabled: raw.enabled ?? true,
+    interval: raw.interval ?? 60,
+    aiProvider: {
+      baseUrl: raw.aiProvider?.baseUrl || legacyAi.baseUrl || DEFAULT_AI_BASE_URL,
+      model: raw.aiProvider?.model || legacyAi.model || DEFAULT_AI_MODEL,
+      apiKey: raw.aiProvider?.apiKey || legacyAi.apiKey || '',
+    },
+    channels: {
+      comment: {
+        ...comment,
+        likeComments: raw.channels?.comment?.likeComments ?? raw.likeComments ?? true,
+      },
+      directMessage,
+      follow,
+    },
+    history: Array.isArray(raw.history) ? raw.history : [],
+  }
 }
 
 const load = async () => {
+  loading.value = true
+  loadError.value = ''
   try {
-    const s = await invoke('get_auto_reply_settings')
-    enabled.value = s.enabled
-    message.value = s.message
-    interval.value = s.interval
-    replyOnlyOnce.value = s.replyOnlyOnce
-    likeComments.value = s.likeComments ?? true
-    sources.value = s.sources || ['comment', 'directMessage', 'follow']
-    history.value = s.history || []
-    // 加载 AI 配置
-    if (s.ai) {
-      aiEnabled.value = s.ai.enabled ?? false
-      aiBaseUrl.value = s.ai.baseUrl || 'https://api.openai.com/v1'
-      aiModel.value = s.ai.model || 'gpt-4o-mini'
-      aiApiKey.value = s.ai.apiKey || ''
-      aiSystemPrompt.value = s.ai.systemPrompt || ''
-      aiPromptTemplate.value = s.ai.promptTemplate || ''
-    }
-  } catch (e) {
-    console.error('加载设置失败:', e)
+    const stored = await invoke('get_auto_reply_settings')
+    Object.assign(settings, normalizeSettings(stored))
+    loaded = true
+  } catch (error) {
+    loaded = false
+    loadError.value = errorMessage(error, '无法读取本地设置')
+  } finally {
+    loading.value = false
   }
+
   try {
     autostartEnabled.value = await invoke('get_autostart_status')
-  } catch (e) {
-    console.error('加载开机自启状态失败:', e)
+  } catch (error) {
+    console.error('加载开机自启状态失败:', error)
   }
 }
 
 const save = async () => {
+  if (!loaded) return false
+
+  const version = ++saveVersion
+  const snapshot = JSON.parse(JSON.stringify(settings))
+  saveState.value = 'saving'
+  saveQueue = saveQueue
+    .catch(() => undefined)
+    .then(() => invoke('save_auto_reply_settings', { settings: snapshot }))
+
   try {
-    await invoke('save_auto_reply_settings', {
-      settings: {
-        enabled: enabled.value,
-        message: message.value,
-        interval: interval.value,
-        replyOnlyOnce: replyOnlyOnce.value,
-        likeComments: likeComments.value,
-        sources: sources.value,
-        history: history.value || [],
-        ai: {
-          enabled: aiEnabled.value,
-          baseUrl: aiBaseUrl.value,
-          model: aiModel.value,
-          apiKey: aiApiKey.value,
-          systemPrompt: aiSystemPrompt.value,
-          promptTemplate: aiPromptTemplate.value,
-        }
-      }
-    })
-  } catch (e) {
-    console.error('保存设置失败:', e)
+    await saveQueue
+    if (version === saveVersion) saveState.value = 'saved'
+    return true
+  } catch (error) {
+    if (version === saveVersion) saveState.value = 'error'
+    console.error('保存设置失败:', error)
+    return false
   }
 }
 
-const testReply = async () => {
-  try {
-    const result = await invoke('test_auto_reply')
-    alert(result)
-  } catch (e) {
-    console.error('测试失败:', e)
+const ensureSaved = async () => {
+  if (!(await save())) {
+    throw new Error('保存设置失败，请重试')
   }
+}
+
+const saveInterval = () => {
+  const value = Number(settings.interval) || 60
+  settings.interval = Math.min(3600, Math.max(1, Math.round(value)))
+  save()
+}
+
+const applyPreset = (provider) => {
+  const presets = {
+    deepseek: { baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash' },
+    openai: { baseUrl: DEFAULT_AI_BASE_URL, model: DEFAULT_AI_MODEL },
+    ollama: { baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5:7b' },
+  }
+  const preset = presets[provider]
+  if (!preset) return
+  Object.assign(settings.aiProvider, preset)
+  save()
+}
+
+const setReplyPolicy = (policy) => {
+  currentChannel.value.replyPolicy = policy
+  save()
+}
+
+const insertVar = (variable) => {
+  currentChannel.value.ai.promptTemplate += `{${variable}}`
+  save()
 }
 
 const testAiReply = async () => {
@@ -487,695 +593,823 @@ const testAiReply = async () => {
   aiTestResult.value = ''
   aiTestError.value = false
   try {
-    const result = await invoke('test_ai_reply')
-    aiTestResult.value = result
-    aiTestError.value = false
-  } catch (e) {
-    aiTestResult.value = typeof e === 'string' ? e : '测试失败，请检查配置'
+    await ensureSaved()
+    aiTestResult.value = await invoke('test_ai_reply')
+  } catch (error) {
+    aiTestResult.value = errorMessage(error, '测试失败，请检查 AI 服务配置')
     aiTestError.value = true
   } finally {
     aiTesting.value = false
   }
 }
 
-const manualReply = async () => {
+const testReply = async () => {
+  previewRunning.value = true
+  actionResult.value = ''
+  actionError.value = false
   try {
-    const result = await invoke('manual_reply_video_comments')
-    alert(result)
-  } catch (e) {
-    alert('执行失败: ' + e)
-    console.error('手动回复失败:', e)
+    await ensureSaved()
+    actionResult.value = await invoke('test_auto_reply')
+  } catch (error) {
+    actionResult.value = errorMessage(error, '回复模板预览失败')
+    actionError.value = true
+  } finally {
+    previewRunning.value = false
+  }
+}
+
+const manualReply = async () => {
+  manualRunning.value = true
+  actionResult.value = ''
+  actionError.value = false
+  try {
+    await ensureSaved()
+    actionResult.value = await invoke('manual_reply_video_comments')
+  } catch (error) {
+    actionResult.value = errorMessage(error, '处理视频评论失败')
+    actionError.value = true
+  } finally {
+    manualRunning.value = false
   }
 }
 
 const toggleAutostart = async () => {
   try {
     await invoke('set_autostart', { enabled: autostartEnabled.value })
-  } catch (e) {
-    console.error('设置开机自启失败:', e)
+  } catch (error) {
     autostartEnabled.value = !autostartEnabled.value
-    alert(typeof e === 'string' ? e : '设置开机自启失败')
+    console.error('设置开机自启失败:', error)
   }
 }
 
 const goBack = () => router.push('/')
 
-onMounted(() => load())
+onMounted(load)
 </script>
 
 <style scoped>
-/* Octo Code Design System - Dark Theme */
-
 .auto-reply-page {
   min-height: 100vh;
-  background-color: #0D1117;
-  color: #E6EDF3;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
-  display: flex;
-  flex-direction: column;
+  background: #f4f6f8;
+  color: #20252b;
 }
 
-/* Header */
 .page-header {
-  background-color: #161B22;
-  border-bottom: 1px solid #30363D;
-  padding: 0 24px;
-  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  border-bottom: 1px solid #dfe3e8;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(12px);
 }
 
 .header-content {
-  max-width: 768px;
-  margin: 0 auto;
-  height: 64px;
-  display: flex;
+  display: grid;
+  grid-template-columns: 40px 1fr minmax(64px, auto);
   align-items: center;
-  gap: 16px;
+  width: min(960px, calc(100% - 32px));
+  min-height: 64px;
+  margin: 0 auto;
+  gap: 12px;
 }
 
-.btn-back {
+.header-content h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.icon-button,
+.field-icon-button {
+  display: inline-grid;
+  place-items: center;
   width: 36px;
   height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: transparent;
-  border: 1px solid #30363D;
-  border-radius: 6px;
-  color: #8B949E;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #424a53;
   cursor: pointer;
-  transition: all 0.15s ease;
 }
 
-.btn-back:hover {
-  background-color: #21262D;
-  border-color: #484F58;
-  color: #E6EDF3;
+.icon-button:hover,
+.field-icon-button:hover {
+  border-color: #d7dce1;
+  background: #f1f3f5;
 }
 
-.header-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: #E6EDF3;
-  margin: 0;
+.save-state {
+  min-width: 64px;
+  color: #68717c;
+  font-size: 13px;
+  text-align: right;
 }
 
-.header-spacer {
-  width: 36px;
+.save-state.saved {
+  color: #16794b;
 }
 
-/* Main Content */
+.save-state.error {
+  color: #b42318;
+}
+
 .page-main {
-  flex: 1;
-  max-width: 768px;
-  width: 100%;
+  width: min(960px, calc(100% - 32px));
   margin: 0 auto;
+  padding: 28px 0 48px;
+}
+
+.settings-surface,
+.history-surface,
+.access-panel,
+.loading-panel,
+.error-panel {
+  border: 1px solid #dfe3e8;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(22, 29, 37, 0.04);
+}
+
+.surface-section {
   padding: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
 }
 
-/* Cards */
-.card {
-  background-color: #161B22;
-  border: 1px solid #30363D;
-  border-radius: 8px;
-  padding: 20px;
+.surface-section + .surface-section {
+  border-top: 1px solid #e5e8eb;
 }
 
-.card-header {
+.section-heading {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.card-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: #E6EDF3;
-  margin: 0;
-}
-
-.badge {
-  padding: 2px 8px;
-  background-color: #388BFD1A;
-  color: #2F81F7;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-/* Lock Card */
-.lock-card {
-  background-color: #161B22;
-  border: 1px solid #30363D;
-  border-radius: 8px;
-  padding: 48px 24px;
-  text-align: center;
-}
-
-.lock-icon {
+  gap: 20px;
   margin-bottom: 20px;
 }
 
-.lock-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: #E6EDF3;
-  margin: 0 0 12px;
+.section-heading h2,
+.channel-title-row h3,
+.access-panel h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: 0;
 }
 
-.lock-desc {
-  font-size: 14px;
-  color: #8B949E;
-  margin: 0 0 24px;
+.section-heading p,
+.channel-title-row p,
+.access-panel p {
+  margin: 5px 0 0;
+  color: #68717c;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
-.lock-btn {
-  padding: 10px 24px;
-  background-color: #238636;
-  border: 1px solid rgba(46, 160, 67, 0.4);
-  border-radius: 6px;
-  color: #FFFFFF;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
+.setting-list {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid #e1e5e9;
+  border-radius: 8px;
+  background: #e1e5e9;
 }
 
-.lock-btn:hover {
-  background-color: #2EA043;
-}
-
-/* Setting Row */
 .setting-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  min-height: 66px;
+  gap: 24px;
+  padding: 14px 16px;
+  background: #ffffff;
 }
 
-.setting-info {
-  flex: 1;
+.setting-copy {
+  display: grid;
+  gap: 4px;
   min-width: 0;
 }
 
-.setting-title {
+.setting-copy strong {
   font-size: 14px;
-  font-weight: 500;
-  color: #E6EDF3;
-  margin-bottom: 4px;
+  font-weight: 600;
 }
 
-.setting-desc {
+.setting-copy span {
+  color: #68717c;
   font-size: 12px;
-  color: #8B949E;
+  line-height: 1.45;
 }
 
-/* Toggle */
 .toggle {
   position: relative;
-  display: inline-block;
-  width: 48px;
+  flex: 0 0 auto;
+  width: 42px;
   height: 24px;
-  cursor: pointer;
-  flex-shrink: 0;
 }
 
 .toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
   opacity: 0;
-  width: 0;
-  height: 0;
 }
 
 .toggle-track {
   position: absolute;
   inset: 0;
-  background-color: #30363D;
-  border-radius: 24px;
-  transition: background-color 0.2s ease;
+  border-radius: 999px;
+  background: #b9c0c8;
+  cursor: pointer;
+  transition: background-color 0.18s ease;
 }
 
-.toggle-track::before {
-  content: '';
+.toggle-track::after {
   position: absolute;
-  height: 18px;
-  width: 18px;
+  top: 3px;
   left: 3px;
-  bottom: 3px;
-  background-color: #E6EDF3;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  transition: transform 0.2s ease;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(18, 26, 34, 0.25);
+  content: '';
+  transition: transform 0.18s ease;
 }
 
 .toggle input:checked + .toggle-track {
-  background-color: #238636;
+  background: #1681c4;
 }
 
-.toggle input:checked + .toggle-track::before {
-  transform: translateX(24px);
+.toggle input:checked + .toggle-track::after {
+  transform: translateX(18px);
 }
 
-/* Chips */
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+.toggle input:focus-visible + .toggle-track {
+  outline: 3px solid rgba(22, 129, 196, 0.22);
+  outline-offset: 2px;
 }
 
-.chip {
+.compact-field {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  background-color: #21262D;
-  border: 1px solid #30363D;
-  border-radius: 20px;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 18px;
+}
+
+.compact-field label,
+.form-field label {
+  color: #343b43;
   font-size: 13px;
-  font-weight: 500;
-  color: #8B949E;
-  cursor: pointer;
-  transition: all 0.15s ease;
+  font-weight: 600;
 }
 
-.chip:hover {
-  border-color: #484F58;
-  color: #E6EDF3;
-}
-
-.chip.active {
-  background-color: #388BFD1A;
-  border-color: #2F81F7;
-  color: #2F81F7;
-}
-
-/* Form Fields */
-.form-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.field-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: #E6EDF3;
-}
-
-.field-hint {
+.number-control {
   display: flex;
   align-items: center;
-  gap: 6px;
+  overflow: hidden;
+  border: 1px solid #cfd5db;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.number-control input {
+  width: 92px;
+  height: 38px;
+  padding: 0 10px;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  text-align: right;
+}
+
+.number-control span {
+  display: grid;
+  place-items: center;
+  align-self: stretch;
+  min-width: 42px;
+  border-left: 1px solid #dfe3e8;
+  background: #f5f7f8;
+  color: #68717c;
   font-size: 12px;
-  color: #8B949E;
-  line-height: 1.4;
 }
 
-/* Input */
-.input {
-  width: 100%;
-  padding: 10px 14px;
-  background-color: #0D1117;
-  border: 1px solid #30363D;
-  border-radius: 6px;
-  font-size: 14px;
-  color: #E6EDF3;
-  transition: all 0.15s ease;
-  box-sizing: border-box;
+.preset-group,
+.segmented-control {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(88px, 1fr);
+  overflow: hidden;
+  border: 1px solid #cfd5db;
+  border-radius: 8px;
+  background: #ffffff;
 }
 
-.input:focus {
-  outline: none;
-  border-color: #2F81F7;
-  box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.15);
+.preset-group {
+  margin-bottom: 18px;
 }
 
-.input::placeholder {
-  color: #6E7681;
-}
-
-/* Input with toggle button */
-.input-with-toggle {
-  display: flex;
-  gap: 8px;
-}
-
-.input-with-toggle .input {
-  flex: 1;
-}
-
-.btn-toggle-key {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: #21262D;
-  border: 1px solid #30363D;
-  border-radius: 6px;
-  color: #8B949E;
+.preset-group button,
+.segmented-control button {
+  min-height: 36px;
+  padding: 7px 14px;
+  border: 0;
+  border-left: 1px solid #dfe3e8;
+  background: #ffffff;
+  color: #424a53;
+  font: inherit;
+  font-size: 13px;
   cursor: pointer;
-  transition: all 0.15s ease;
-  flex-shrink: 0;
 }
 
-.btn-toggle-key:hover {
-  background-color: #30363D;
-  color: #E6EDF3;
+.preset-group button:first-child,
+.segmented-control button:first-child {
+  border-left: 0;
 }
 
-/* Textarea */
-.textarea {
-  width: 100%;
-  padding: 12px 14px;
-  background-color: #0D1117;
-  border: 1px solid #30363D;
-  border-radius: 6px;
-  font-size: 14px;
-  line-height: 1.5;
-  color: #E6EDF3;
-  resize: vertical;
-  transition: all 0.15s ease;
-  box-sizing: border-box;
-  font-family: inherit;
+.preset-group button:hover,
+.segmented-control button:hover {
+  background: #f3f6f8;
 }
 
-.textarea:focus {
-  outline: none;
-  border-color: #2F81F7;
-  box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.15);
+.segmented-control button.active {
+  background: #e8f3fa;
+  color: #096a9f;
+  font-weight: 600;
 }
 
-.textarea::placeholder {
-  color: #6E7681;
-}
-
-/* Actions */
-.actions {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-/* Buttons */
-.btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 12px 20px;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  border: 1px solid;
-}
-
-.btn-primary {
-  background-color: #238636;
-  border-color: rgba(46, 160, 67, 0.4);
-  color: #FFFFFF;
-}
-
-.btn-primary:hover {
-  background-color: #2EA043;
-}
-
-.btn-secondary {
-  background-color: #21262D;
-  border-color: #30363D;
-  color: #E6EDF3;
-}
-
-.btn-secondary:hover {
-  background-color: #30363D;
-}
-
-.btn-block {
-  width: 100%;
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* ========== AI Card ========== */
-.ai-card {
-  border-color: #1F3A5F;
-  background: linear-gradient(135deg, #161B22 0%, #0D1117 100%);
-}
-
-.ai-badge {
-  padding: 3px 10px;
-  border-radius: 12px;
-  font-size: 11px;
-  font-weight: 500;
-  background-color: #30363D;
-  color: #8B949E;
-}
-
-.ai-badge.active {
-  background-color: #3FB9501A;
-  color: #3FB950;
-}
-
-.ai-config {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid #21262D;
-  display: flex;
-  flex-direction: column;
+.provider-grid,
+.channel-form-grid,
+.ai-prompt-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.55fr);
   gap: 16px;
 }
 
-/* Prompt Sections */
-.prompt-section {
-  background-color: #0D1117;
-  border: 1px solid #21262D;
+.form-field {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.wide-field,
+.full-width {
+  grid-column: 1 / -1;
+}
+
+.form-field input,
+.form-field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid #cfd5db;
   border-radius: 8px;
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  background: #ffffff;
+  color: #20252b;
+  font: inherit;
+  font-size: 14px;
+  letter-spacing: 0;
+  outline: 0;
 }
 
-.prompt-section-primary {
-  border-color: #1F6FEB44;
-  background: linear-gradient(135deg, #0D1117 0%, #0C1524 100%);
+.form-field input {
+  height: 40px;
+  padding: 0 12px;
 }
 
-.prompt-section-header {
+.form-field textarea {
+  min-height: 92px;
+  padding: 10px 12px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.form-field input:focus,
+.form-field textarea:focus,
+.number-control:focus-within {
+  border-color: #1681c4;
+  box-shadow: 0 0 0 3px rgba(22, 129, 196, 0.13);
+}
+
+.input-with-action {
+  position: relative;
+}
+
+.input-with-action input {
+  padding-right: 48px;
+}
+
+.field-icon-button {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+}
+
+.field-hint {
+  color: #727b85;
+  font-size: 12px;
+}
+
+.inline-action-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #E6EDF3;
-}
-
-.prompt-tag {
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 10px;
-  font-weight: 500;
-  background-color: #30363D;
-  color: #8B949E;
-}
-
-.prompt-tag.highlight {
-  background-color: #388BFD22;
-  color: #58A6FF;
-}
-
-.prompt-textarea {
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-/* Template Variables */
-.template-vars {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
 }
 
-.var-label {
-  font-size: 12px;
-  color: #8B949E;
-}
-
-.var-chip {
-  padding: 4px 10px;
-  background-color: #21262D;
-  border: 1px solid #30363D;
-  border-radius: 12px;
-  font-size: 12px;
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  color: #79C0FF;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.var-chip:hover {
-  background-color: #388BFD1A;
-  border-color: #2F81F7;
-  color: #A5D6FF;
-}
-
-/* Preset Buttons */
-.preset-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.preset-label {
-  font-size: 12px;
-  color: #8B949E;
-}
-
-.preset-btn {
-  padding: 4px 12px;
-  background-color: #21262D;
-  border: 1px solid #30363D;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 500;
-  color: #79C0FF;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.preset-btn:hover {
-  background-color: #388BFD1A;
-  border-color: #2F81F7;
-  color: #A5D6FF;
-}
-
-.ai-test-result {
-  margin-top: 8px;
-  padding: 12px 14px;
-  background-color: #0D1117;
-  border: 1px solid #238636;
-  border-radius: 6px;
-  font-size: 13px;
-  color: #3FB950;
-  line-height: 1.5;
-}
-
-.ai-test-result.error {
-  border-color: #DA3633;
-  color: #F85149;
-}
-
-/* Empty State */
-.empty-state {
-  display: flex;
-  flex-direction: column;
+.button {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 48px 24px;
-  color: #8B949E;
+  min-height: 40px;
+  gap: 8px;
+  padding: 9px 15px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
-.empty-state svg {
-  margin-bottom: 16px;
-  opacity: 0.5;
+.button.primary {
+  border-color: #1278b4;
+  background: #1681c4;
+  color: #ffffff;
 }
 
-.empty-state p {
-  margin: 0;
+.button.secondary {
+  border-color: #cfd5db;
+  background: #ffffff;
+  color: #343b43;
+}
+
+.button:hover:not(:disabled) {
+  filter: brightness(0.97);
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.button-spinner,
+.spinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+.inline-result,
+.action-result {
+  color: #16794b;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.inline-result.error,
+.action-result.error {
+  color: #b42318;
+}
+
+.channel-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid #cfd5db;
+  border-radius: 8px;
+  background: #f5f7f8;
+}
+
+.channel-tab {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 58px;
+  gap: 3px;
+  padding: 9px 8px;
+  border: 0;
+  border-left: 1px solid #dfe3e8;
+  background: transparent;
+  color: #424a53;
+  font: inherit;
+  cursor: pointer;
+}
+
+.channel-tab:first-child {
+  border-left: 0;
+}
+
+.channel-tab span {
   font-size: 14px;
+  font-weight: 600;
 }
 
-/* History */
-.history-list {
+.channel-tab small {
+  color: #818a94;
+  font-size: 11px;
+}
+
+.channel-tab small.enabled {
+  color: #16794b;
+}
+
+.channel-tab.active {
+  background: #ffffff;
+  box-shadow: inset 0 -3px #1681c4;
+  color: #096a9f;
+}
+
+.channel-panel {
+  padding-top: 22px;
+}
+
+.channel-title-row {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  min-height: 44px;
+  gap: 20px;
+}
+
+.channel-option-row {
+  margin-top: 18px;
+  border: 1px solid #e1e5e9;
+  border-radius: 8px;
+  background: #f8fafb;
+}
+
+.channel-form-grid {
+  margin-top: 20px;
+}
+
+.channel-ai-section {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e8eb;
+}
+
+.channel-ai-section > .setting-row {
+  min-height: auto;
+  padding: 0;
+}
+
+.ai-prompt-grid {
+  margin-top: 18px;
+}
+
+.variable-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.variable-row span {
+  margin-right: 2px;
+  color: #727b85;
+  font-size: 12px;
+}
+
+.variable-row button {
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid #cbdbe5;
+  border-radius: 6px;
+  background: #f1f7fb;
+  color: #096a9f;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.channel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e8eb;
+}
+
+.action-result {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-left: 3px solid currentColor;
+  background: #f7f9fa;
+}
+
+.history-surface {
+  margin-top: 18px;
+  padding: 24px;
+}
+
+.history-heading {
+  margin-bottom: 14px;
+}
+
+.count-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #eef1f3;
+  color: #59636e;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.empty-history {
+  display: grid;
+  place-items: center;
+  min-height: 150px;
+  gap: 8px;
+  color: #929aa3;
+  font-size: 13px;
+}
+
+.history-list {
+  display: grid;
 }
 
 .history-item {
-  padding: 16px;
-  background-color: #0D1117;
-  border: 1px solid #30363D;
-  border-radius: 8px;
+  padding: 14px 0;
+  border-top: 1px solid #e8ebee;
+}
+
+.history-item:first-child {
+  border-top: 0;
 }
 
 .history-meta {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
+  gap: 16px;
 }
 
-.history-user {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #E6EDF3;
+.history-meta strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
 }
 
-.history-user svg {
-  color: #8B949E;
-}
-
-.history-source {
-  padding: 3px 10px;
-  border-radius: 12px;
+.history-meta time {
+  flex: 0 0 auto;
+  color: #818a94;
   font-size: 11px;
-  font-weight: 500;
-  text-transform: uppercase;
 }
 
-.history-source.comment {
-  background-color: #388BFD1A;
-  color: #2F81F7;
+.history-item p {
+  margin: 7px 0 0;
+  color: #4a535d;
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 
-.history-source.directMessage {
-  background-color: #3FB9501A;
-  color: #3FB950;
+.access-panel,
+.loading-panel,
+.error-panel {
+  display: grid;
+  justify-items: center;
+  min-height: 260px;
+  align-content: center;
+  gap: 12px;
+  padding: 32px;
+  text-align: center;
 }
 
-.history-source.follow {
-  background-color: #A371F71A;
-  color: #A371F7;
+.access-panel svg {
+  color: #d56a18;
 }
 
-.history-msg {
+.loading-panel,
+.error-panel {
+  color: #68717c;
   font-size: 14px;
-  color: #C9D1D9;
-  line-height: 1.5;
-  margin: 0 0 8px 0;
 }
 
-.history-time {
-  font-size: 12px;
-  color: #8B949E;
-  margin: 0;
+.error-panel strong {
+  color: #b42318;
 }
 
-/* Responsive */
-@media (max-width: 640px) {
-  .page-header {
-    padding: 0 16px;
+.spinner {
+  width: 24px;
+  height: 24px;
+  color: #1681c4;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
-  
+}
+
+@media (max-width: 700px) {
+  .header-content,
   .page-main {
+    width: min(100% - 24px, 960px);
+  }
+
+  .page-main {
+    padding-top: 16px;
+  }
+
+  .surface-section,
+  .history-surface {
+    padding: 18px;
+  }
+
+  .provider-grid,
+  .channel-form-grid,
+  .ai-prompt-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wide-field,
+  .full-width {
+    grid-column: auto;
+  }
+
+  .setting-row {
+    gap: 16px;
+  }
+
+  .preset-group {
+    display: grid;
+    width: 100%;
+  }
+
+  .channel-actions .button {
+    flex: 1 1 220px;
+  }
+}
+
+@media (max-width: 430px) {
+  .header-content {
+    grid-template-columns: 36px 1fr 58px;
+  }
+
+  .header-content h1 {
+    font-size: 18px;
+  }
+
+  .surface-section,
+  .history-surface {
     padding: 16px;
   }
-  
-  .card {
-    padding: 16px;
+
+  .section-heading {
+    margin-bottom: 16px;
+  }
+
+  .setting-row {
+    align-items: flex-start;
+  }
+
+  .compact-field {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .number-control {
+    width: 100%;
+  }
+
+  .number-control input {
+    flex: 1;
+    width: auto;
+  }
+
+  .channel-tab {
+    min-height: 62px;
+    padding-inline: 4px;
+  }
+
+  .channel-tab span {
+    font-size: 13px;
+  }
+
+  .segmented-control {
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .history-meta {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
   }
 }
 </style>

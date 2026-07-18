@@ -49,6 +49,7 @@ impl MessageHandler for FollowHandler {
 
         for f in list {
             let mid = f["mid"].as_i64().unwrap_or(0);
+            let follow_time = f["mtime"].as_i64().unwrap_or(0);
             let name = f["uname"].as_str().unwrap_or("").to_string();
             let uid = mid.to_string();
 
@@ -57,7 +58,11 @@ impl MessageHandler for FollowHandler {
             }
 
             messages.push(Message {
-                id: uid.clone(),
+                id: if follow_time > 0 {
+                    format!("{}:{}", uid, follow_time)
+                } else {
+                    uid.clone()
+                },
                 user_id: uid,
                 user_name: name,
                 content: None,

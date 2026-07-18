@@ -1,4 +1,4 @@
-use super::models::MsgSource;
+use super::models::{MsgSource, ReplyPolicy};
 use super::state::AutoReplyState;
 use crate::bilibili::UserInfo;
 use async_trait::async_trait;
@@ -49,13 +49,6 @@ pub trait MessageHandler: Send + Sync {
         Ok(())
     }
 
-    fn needs_history_fallback(&self) -> bool {
-        matches!(
-            self.source_type(),
-            MsgSource::DirectMessage | MsgSource::Follow
-        )
-    }
-
     async fn like_comment_if_needed(
         &self,
         account: &UserInfo,
@@ -64,7 +57,7 @@ pub trait MessageHandler: Send + Sync {
         result: &mut HandleResult,
     ) {
         let settings = state.get_settings().await;
-        if !settings.like_comments || self.source_type() != MsgSource::Comment {
+        if !settings.channels.comment.like_comments || self.source_type() != MsgSource::Comment {
             return;
         }
 
@@ -98,22 +91,36 @@ pub trait MessageHandler: Send + Sync {
         state: &AutoReplyState,
     ) -> Result<HandleResult, String> {
         let settings = state.get_settings().await;
+        let source = self.source_type();
+        let channel = settings.channel(source).clone();
         let messages = self.fetch_messages(account).await?;
 
         let mut result = HandleResult::default();
 
         for message in messages {
-            let dedup_key = format!("{}:{}", self.source_type().id(), message.id);
+            let event_key = format!("event:{}:{}:{}", account.uid, source.id(), message.id);
+            let user_key = format!("user:{}:{}:{}", account.uid, source.id(), message.user_id);
 
             let already_replied_on_bilibili = message.extra_data["already_replied"]
                 .as_bool()
                 .unwrap_or(false);
+            let legacy_event_key = match source {
+                MsgSource::Comment => Some(format!("{}:{}", source.id(), message.id)),
+                MsgSource::DirectMessage | MsgSource::Follow => None,
+            };
+            let already_processed = state.is_replied(&event_key).await
+                || match legacy_event_key.as_deref() {
+                    Some(key) => state.is_replied(key).await,
+                    None => false,
+                };
 
-            if already_replied_on_bilibili
-                || (settings.reply_only_once && state.is_replied(&dedup_key).await)
-            {
-                if settings.reply_only_once {
-                    state.mark_replied(dedup_key).await;
+            if already_replied_on_bilibili || already_processed {
+                if already_replied_on_bilibili && !already_processed {
+                    let mut keys = vec![event_key.clone()];
+                    if channel.reply_policy == ReplyPolicy::OncePerUser {
+                        keys.push(user_key.clone());
+                    }
+                    state.mark_replied_many(keys).await;
                 }
                 self.like_comment_if_needed(account, &message, state, &mut result)
                     .await;
@@ -123,25 +130,43 @@ pub trait MessageHandler: Send + Sync {
                 continue;
             }
 
-            // \u{5386}\u{53f2}\u{8bb0}\u{5f55}\u{56de}\u{67e5}\u{ff08}\u{79c1}\u{4fe1}/\u{5173}\u{6ce8}\u{964d}\u{7ea7}\u{4fdd}\u{969c}\u{ff09}
-            if settings.reply_only_once
-                && self.needs_history_fallback()
-                && state
-                    .is_replied_in_history(&message.user_id, &self.source_type())
-                    .await
-            {
-                log::info!("\u{5386}\u{53f2}\u{8bb0}\u{5f55}\u{56de}\u{67e5}\u{547d}\u{4e2d}\u{ff0c}\u{8df3}\u{8fc7}\u{5df2}\u{56de}\u{590d}\u{7528}\u{6237}: {}", message.user_id);
-                // \u{540c}\u{6b65}\u{5230} replied_set \u{907f}\u{514d}\u{4e0b}\u{6b21}\u{518d}\u{67e5}\u{5386}\u{53f2}
-                state.mark_replied(dedup_key).await;
-                continue;
+            if channel.reply_policy == ReplyPolicy::OncePerUser {
+                let legacy_user_key = match source {
+                    MsgSource::DirectMessage | MsgSource::Follow => {
+                        Some(format!("{}:{}", source.id(), message.user_id))
+                    }
+                    MsgSource::Comment => None,
+                };
+                let replied_by_key = state.is_replied(&user_key).await
+                    || match legacy_user_key.as_deref() {
+                        Some(key) => state.is_replied(key).await,
+                        None => false,
+                    };
+                let replied_by_history = source != MsgSource::Comment
+                    && state
+                        .is_replied_in_history(&message.user_id, &message.user_name, &source)
+                        .await;
+
+                if replied_by_key || replied_by_history {
+                    log::info!(
+                        "已回复用户回查命中，跳过: source={}, user={}",
+                        source.id(),
+                        message.user_id
+                    );
+                    state
+                        .mark_replied_many(vec![event_key.clone(), user_key.clone()])
+                        .await;
+                    continue;
+                }
             }
 
             // \u{751f}\u{6210}\u{56de}\u{590d}\u{5185}\u{5bb9}\u{ff1a}\u{4f18}\u{5148}\u{4f7f}\u{7528} AI\u{ff0c}\u{5426}\u{5219}\u{4f7f}\u{7528}\u{6a21}\u{677f}
-            let reply_text = if settings.ai.enabled {
-                let source_name = self.source_type().display_name();
+            let ai_config = settings.resolved_ai(source);
+            let reply_text = if ai_config.enabled {
+                let source_name = source.display_name();
                 let msg_content = message.content.as_deref().unwrap_or("");
                 match super::ai::generate_reply(
-                    &settings.ai,
+                    &ai_config,
                     &message.user_name,
                     msg_content,
                     source_name,
@@ -154,20 +179,22 @@ pub trait MessageHandler: Send + Sync {
                     }
                     Err(e) => {
                         log::warn!("AI \u{751f}\u{6210}\u{56de}\u{590d}\u{5931}\u{8d25}\u{ff0c}\u{56de}\u{9000}\u{5230}\u{6a21}\u{677f}: {}", e);
-                        format_message(&settings.message, &message.user_name)
+                        format_message(&channel.message, &message.user_name)
                     }
                 }
             } else {
-                format_message(&settings.message, &message.user_name)
+                format_message(&channel.message, &message.user_name)
             };
 
             match self.send_reply(account, &message, &reply_text).await {
                 Ok(_) => {
-                    if settings.reply_only_once {
-                        state.mark_replied(dedup_key).await;
+                    let mut keys = vec![event_key];
+                    if channel.reply_policy == ReplyPolicy::OncePerUser {
+                        keys.push(user_key);
                     }
+                    state.mark_replied_many(keys).await;
                     state
-                        .add_history(message.user_name.clone(), reply_text, self.source_type())
+                        .add_history(message.user_name.clone(), reply_text, source)
                         .await;
                     result.success_count += 1;
 
@@ -188,7 +215,7 @@ pub trait MessageHandler: Send + Sync {
                 }
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            processing_delay().await;
         }
 
         Ok(result)
@@ -200,7 +227,7 @@ pub trait MessageHandler: Send + Sync {
         state: &AutoReplyState,
     ) -> Result<HandleResult, String> {
         let settings = state.get_settings().await;
-        if !settings.like_comments || self.source_type() != MsgSource::Comment {
+        if !settings.channels.comment.like_comments || self.source_type() != MsgSource::Comment {
             return Ok(HandleResult::default());
         }
 
@@ -213,7 +240,7 @@ pub trait MessageHandler: Send + Sync {
             if result.stopped_by_rate_limit {
                 break;
             }
-            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            processing_delay().await;
         }
 
         Ok(result)
@@ -291,6 +318,11 @@ impl Default for HandlerRegistry {
     }
 }
 
+async fn processing_delay() {
+    #[cfg(not(test))]
+    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -304,6 +336,12 @@ mod tests {
     struct MockCommentHandler {
         liked: Arc<AtomicUsize>,
         messages: Vec<Message>,
+    }
+
+    struct MockDirectMessageHandler {
+        sent: Arc<AtomicUsize>,
+        messages: Vec<Message>,
+        should_fail: bool,
     }
 
     #[async_trait]
@@ -340,6 +378,35 @@ mod tests {
         }
     }
 
+    #[async_trait]
+    impl MessageHandler for MockDirectMessageHandler {
+        fn name(&self) -> &'static str {
+            "mock direct message"
+        }
+
+        fn source_type(&self) -> MsgSource {
+            MsgSource::DirectMessage
+        }
+
+        async fn fetch_messages(&self, _account: &UserInfo) -> Result<Vec<Message>, String> {
+            Ok(self.messages.clone())
+        }
+
+        async fn send_reply(
+            &self,
+            _account: &UserInfo,
+            _message: &Message,
+            _reply_msg: &str,
+        ) -> Result<(), String> {
+            self.sent.fetch_add(1, Ordering::SeqCst);
+            if self.should_fail {
+                Err("mock send failure".to_string())
+            } else {
+                Ok(())
+            }
+        }
+    }
+
     fn temp_data_dir(name: &str) -> std::path::PathBuf {
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -371,6 +438,16 @@ mod tests {
         }
     }
 
+    fn direct_message(id: &str) -> Message {
+        Message {
+            id: id.to_string(),
+            user_id: "2".to_string(),
+            user_name: "2".to_string(),
+            content: Some("hello".to_string()),
+            extra_data: serde_json::Value::Null,
+        }
+    }
+
     #[tokio::test]
     async fn likes_new_comments_when_only_like_comments_is_enabled() {
         let data_dir = temp_data_dir("likes-new-comments");
@@ -378,8 +455,8 @@ mod tests {
         state
             .update_settings(|settings| {
                 settings.enabled = false;
-                settings.like_comments = true;
-                settings.sources = Vec::new();
+                settings.channels.comment.like_comments = true;
+                settings.channels.comment.reply.enabled = false;
             })
             .await
             .unwrap();
@@ -399,5 +476,151 @@ mod tests {
 
         assert_eq!(1, result.like_success_count);
         assert_eq!(1, liked.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn does_not_reply_twice_to_the_same_direct_message() {
+        let data_dir = temp_data_dir("deduplicate-direct-message");
+        let state = AutoReplyState::new_for_test(data_dir.clone()).unwrap();
+        state
+            .update_settings(|settings| {
+                settings.channels.direct_message.reply_policy = ReplyPolicy::PerMessage;
+            })
+            .await
+            .unwrap();
+
+        let sent = Arc::new(AtomicUsize::new(0));
+        let handler = MockDirectMessageHandler {
+            sent: Arc::clone(&sent),
+            messages: vec![direct_message("message-key-1")],
+            should_fail: false,
+        };
+
+        handler.handle(&test_account(), &state).await.unwrap();
+        handler.handle(&test_account(), &state).await.unwrap();
+
+        let _ = std::fs::remove_dir_all(data_dir);
+        assert_eq!(1, sent.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn replies_to_each_direct_message_under_per_message_policy() {
+        let data_dir = temp_data_dir("per-message-direct-messages");
+        let state = AutoReplyState::new_for_test(data_dir.clone()).unwrap();
+        state
+            .update_settings(|settings| {
+                settings.channels.direct_message.reply_policy = ReplyPolicy::PerMessage;
+            })
+            .await
+            .unwrap();
+
+        let sent = Arc::new(AtomicUsize::new(0));
+        let handler = MockDirectMessageHandler {
+            sent: Arc::clone(&sent),
+            messages: vec![
+                direct_message("message-key-1"),
+                direct_message("message-key-2"),
+            ],
+            should_fail: false,
+        };
+
+        handler.handle(&test_account(), &state).await.unwrap();
+
+        assert_eq!(2, sent.load(Ordering::SeqCst));
+        assert!(state.is_replied("event:1:dm:message-key-1").await);
+        assert!(state.is_replied("event:1:dm:message-key-2").await);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[tokio::test]
+    async fn replies_once_per_user_across_different_direct_messages() {
+        let data_dir = temp_data_dir("once-per-user-direct-messages");
+        let state = AutoReplyState::new_for_test(data_dir.clone()).unwrap();
+        state
+            .update_settings(|settings| {
+                settings.channels.direct_message.reply_policy = ReplyPolicy::OncePerUser;
+            })
+            .await
+            .unwrap();
+
+        let sent = Arc::new(AtomicUsize::new(0));
+        let handler = MockDirectMessageHandler {
+            sent: Arc::clone(&sent),
+            messages: vec![
+                direct_message("message-key-1"),
+                direct_message("message-key-2"),
+            ],
+            should_fail: false,
+        };
+
+        handler.handle(&test_account(), &state).await.unwrap();
+
+        assert_eq!(1, sent.load(Ordering::SeqCst));
+        assert!(state.is_replied("user:1:dm:2").await);
+        assert!(state.is_replied("event:1:dm:message-key-2").await);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[tokio::test]
+    async fn failed_direct_message_send_is_not_marked_as_replied() {
+        let data_dir = temp_data_dir("failed-direct-message");
+        let state = AutoReplyState::new_for_test(data_dir.clone()).unwrap();
+        let sent = Arc::new(AtomicUsize::new(0));
+        let messages = vec![direct_message("message-key-1")];
+
+        let failing_handler = MockDirectMessageHandler {
+            sent: Arc::clone(&sent),
+            messages: messages.clone(),
+            should_fail: true,
+        };
+        let failed = failing_handler
+            .handle(&test_account(), &state)
+            .await
+            .unwrap();
+
+        assert_eq!(1, failed.error_count);
+        assert!(!state.is_replied("event:1:dm:message-key-1").await);
+
+        let successful_handler = MockDirectMessageHandler {
+            sent: Arc::clone(&sent),
+            messages,
+            should_fail: false,
+        };
+        let retried = successful_handler
+            .handle(&test_account(), &state)
+            .await
+            .unwrap();
+
+        assert_eq!(1, retried.success_count);
+        assert_eq!(2, sent.load(Ordering::SeqCst));
+        assert!(state.is_replied("event:1:dm:message-key-1").await);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[tokio::test]
+    async fn honors_legacy_once_per_user_direct_message_key() {
+        let data_dir = temp_data_dir("legacy-direct-message-key");
+        let state = AutoReplyState::new_for_test(data_dir.clone()).unwrap();
+        state
+            .update_settings(|settings| {
+                settings.channels.direct_message.reply_policy = ReplyPolicy::OncePerUser;
+            })
+            .await
+            .unwrap();
+        state.merge_replied_set(vec!["dm:2".to_string()]).await;
+
+        let sent = Arc::new(AtomicUsize::new(0));
+        let handler = MockDirectMessageHandler {
+            sent: Arc::clone(&sent),
+            messages: vec![direct_message("message-key-1")],
+            should_fail: false,
+        };
+
+        handler.handle(&test_account(), &state).await.unwrap();
+
+        assert_eq!(0, sent.load(Ordering::SeqCst));
+        assert!(state.is_replied("event:1:dm:message-key-1").await);
+        assert!(state.is_replied("user:1:dm:2").await);
+        let _ = std::fs::remove_dir_all(data_dir);
     }
 }
