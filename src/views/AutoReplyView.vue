@@ -915,6 +915,9 @@ onMounted(load)
   height: 38px;
   padding: 0 10px;
   border: 0;
+  background: #0D1117;
+  color: #E6EDF3;
+  color-scheme: dark;
   outline: 0;
   font: inherit;
   text-align: right;
