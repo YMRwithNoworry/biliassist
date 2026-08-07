@@ -550,6 +550,11 @@ const load = async () => {
   }
 }
 
+const refreshSettings = async () => {
+  const stored = await invoke('get_auto_reply_settings')
+  Object.assign(settings, normalizeSettings(stored))
+}
+
 const save = async () => {
   if (!loaded) return false
 
@@ -659,6 +664,11 @@ const manualReply = async () => {
   try {
     await ensureSaved()
     actionResult.value = await invoke('manual_reply_video_comments')
+    try {
+      await refreshSettings()
+    } catch (error) {
+      console.warn('刷新回复记录失败:', error)
+    }
   } catch (error) {
     actionResult.value = errorMessage(error, '处理视频评论失败')
     actionError.value = true

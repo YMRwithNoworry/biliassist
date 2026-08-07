@@ -225,9 +225,10 @@ impl CommentHandler {
                 Ok(messages) => {
                     if !messages.is_empty() {
                         log::info!("aid={} 找到 {} 条未回复评论", aid, messages.len());
+                        return Ok(messages);
                     }
-                    // WBI 接口成功返回空列表时，不再重复请求旧分页接口。
-                    return Ok(messages);
+                    // 部分账号下 WBI 接口会错误地返回空列表，需用旧接口补抓。
+                    log::warn!("aid={} WBI接口返回空评论，降级到旧分页接口", aid);
                 }
                 Err(error) => log::warn!("WBI评论接口失败，降级到旧接口: {}", error),
             }
