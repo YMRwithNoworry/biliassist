@@ -107,6 +107,11 @@ async fn manual_reply_video_comments() -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn manual_reply_dynamic_comments() -> Result<String, String> {
+    auto_reply::manual_reply_dynamic_comments().await
+}
+
+#[tauri::command]
 async fn open_external_url(url: String) -> Result<(), String> {
     if !(url.starts_with("https://") || url.starts_with("http://")) {
         return Err("仅允许打开 http/https 链接".into());
@@ -325,6 +330,7 @@ pub fn run() {
             merge_liked_set,
             test_auto_reply,
             manual_reply_video_comments,
+            manual_reply_dynamic_comments,
             copy_text_to_clipboard,
             get_current_deep_link,
             open_external_url,

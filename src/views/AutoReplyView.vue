@@ -50,7 +50,7 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <strong>自动回复总开关</strong>
-                  <span>关闭后暂停三个渠道的回复；评论点赞仍按评论区设置执行。</span>
+                  <span>关闭后暂停四个渠道的回复；视频和动态点赞仍按各自设置执行。</span>
                 </div>
                 <label class="toggle">
                   <input v-model="settings.enabled" type="checkbox" @change="save" />
@@ -132,13 +132,13 @@
                 </label>
               </div>
 
-              <div v-if="activeChannel === 'comment'" class="setting-row channel-option-row">
+              <div v-if="isCommentChannel" class="setting-row channel-option-row">
                 <div class="setting-copy">
                   <strong>自动点赞评论</strong>
                   <span>该开关可独立于评论自动回复运行。</span>
                 </div>
                 <label class="toggle">
-                  <input v-model="settings.channels.comment.likeComments" type="checkbox" @change="save" />
+                  <input v-model="currentChannel.likeComments" type="checkbox" @change="save" />
                   <span class="toggle-track"></span>
                 </label>
               </div>
@@ -186,7 +186,7 @@
                   预览全部模板
                 </button>
                 <button
-                  v-if="activeChannel === 'comment'"
+                  v-if="isCommentChannel"
                   class="button primary"
                   type="button"
                   :disabled="manualRunning"
@@ -196,7 +196,7 @@
                   <svg v-else width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="m13 2-2 8h7l-7 12 2-8H6l7-12Z" />
                   </svg>
-                  立即处理评论
+                  {{ activeChannel === 'dynamic' ? '立即处理动态评论' : '立即处理视频评论' }}
                 </button>
               </div>
 
@@ -263,6 +263,10 @@ const createSettings = () => ({
       ...createChannel('perMessage'),
       likeComments: true,
     },
+    dynamic: {
+      ...createChannel('perMessage'),
+      likeComments: true,
+    },
     directMessage: createChannel('oncePerUser'),
     follow: createChannel('oncePerUser'),
   },
@@ -285,7 +289,8 @@ let saveVersion = 0
 let loaded = false
 
 const channelTabs = [
-  { key: 'comment', label: '评论区', description: '处理视频和动态下的新评论。' },
+  { key: 'comment', label: '视频评论', description: '处理已发布视频下的新评论。' },
+  { key: 'dynamic', label: '动态评论', description: '处理已发布动态下的新评论。' },
   { key: 'directMessage', label: '私信', description: '处理未读的一对一私信。' },
   { key: 'follow', label: '关注', description: '向新关注用户发送欢迎私信。' },
 ]
@@ -294,6 +299,7 @@ const activeChannelMeta = computed(
   () => channelTabs.find((tab) => tab.key === activeChannel.value) || channelTabs[0],
 )
 const currentChannel = computed(() => settings.channels[activeChannel.value])
+const isCommentChannel = computed(() => ['comment', 'dynamic'].includes(activeChannel.value))
 const channelHistory = computed(() =>
   settings.history.filter((item) => item.source === activeChannel.value),
 )
@@ -330,6 +336,11 @@ const normalizeSettings = (raw = {}) => {
     ...legacy,
     enabled: legacySources.includes('comment'),
   })
+  const dynamic = normalizeChannel(
+    raw.channels?.dynamic || raw.channels?.comment,
+    'perMessage',
+    { ...legacy, enabled: legacySources.includes('comment') },
+  )
   const directMessage = normalizeChannel(
     raw.channels?.directMessage,
     oncePerUser ? 'oncePerUser' : 'perMessage',
@@ -348,6 +359,14 @@ const normalizeSettings = (raw = {}) => {
       comment: {
         ...comment,
         likeComments: raw.channels?.comment?.likeComments ?? raw.likeComments ?? true,
+      },
+      dynamic: {
+        ...dynamic,
+        likeComments:
+          raw.channels?.dynamic?.likeComments ??
+          raw.channels?.comment?.likeComments ??
+          raw.likeComments ??
+          true,
       },
       directMessage,
       follow,
@@ -441,7 +460,10 @@ const manualReply = async () => {
   actionError.value = false
   try {
     await ensureSaved()
-    actionResult.value = await invoke('manual_reply_video_comments')
+    const command = activeChannel.value === 'dynamic'
+      ? 'manual_reply_dynamic_comments'
+      : 'manual_reply_video_comments'
+    actionResult.value = await invoke(command)
     try {
       await refreshSettings()
     } catch (error) {
@@ -904,7 +926,7 @@ onMounted(load)
 
 .channel-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   overflow: hidden;
   border: 1px solid #30363D;
   border-radius: 8px;

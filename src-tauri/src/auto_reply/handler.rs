@@ -57,7 +57,11 @@ pub trait MessageHandler: Send + Sync {
         result: &mut HandleResult,
     ) {
         let settings = state.get_settings().await;
-        if !settings.channels.comment.like_comments || self.source_type() != MsgSource::Comment {
+        let source = self.source_type();
+        let Some(comment_settings) = settings.comment_settings(source) else {
+            return;
+        };
+        if !comment_settings.like_comments {
             return;
         }
 
@@ -107,7 +111,7 @@ pub trait MessageHandler: Send + Sync {
                 .unwrap_or(false);
             let legacy_event_key = match source {
                 MsgSource::Comment => Some(format!("{}:{}", source.id(), message.id)),
-                MsgSource::DirectMessage | MsgSource::Follow => None,
+                MsgSource::Dynamic | MsgSource::DirectMessage | MsgSource::Follow => None,
             };
             let already_processed = state.is_replied(&event_key).await
                 || match legacy_event_key.as_deref() {
@@ -136,14 +140,14 @@ pub trait MessageHandler: Send + Sync {
                     MsgSource::DirectMessage | MsgSource::Follow => {
                         Some(format!("{}:{}", source.id(), message.user_id))
                     }
-                    MsgSource::Comment => None,
+                    MsgSource::Comment | MsgSource::Dynamic => None,
                 };
                 let replied_by_key = state.is_replied(&user_key).await
                     || match legacy_user_key.as_deref() {
                         Some(key) => state.is_replied(key).await,
                         None => false,
                     };
-                let replied_by_history = source != MsgSource::Comment
+                let replied_by_history = !matches!(source, MsgSource::Comment | MsgSource::Dynamic)
                     && state
                         .is_replied_in_history(&message.user_id, &message.user_name, &source)
                         .await;
@@ -206,7 +210,10 @@ pub trait MessageHandler: Send + Sync {
         state: &AutoReplyState,
     ) -> Result<HandleResult, String> {
         let settings = state.get_settings().await;
-        if !settings.channels.comment.like_comments || self.source_type() != MsgSource::Comment {
+        let Some(comment_settings) = settings.comment_settings(self.source_type()) else {
+            return Ok(HandleResult::default());
+        };
+        if !comment_settings.like_comments {
             return Ok(HandleResult::default());
         }
 
@@ -316,6 +323,7 @@ mod tests {
     };
 
     struct MockCommentHandler {
+        source: MsgSource,
         liked: Arc<AtomicUsize>,
         messages: Vec<Message>,
     }
@@ -333,7 +341,7 @@ mod tests {
         }
 
         fn source_type(&self) -> MsgSource {
-            MsgSource::Comment
+            self.source
         }
 
         async fn fetch_messages(&self, _account: &UserInfo) -> Result<Vec<Message>, String> {
@@ -445,8 +453,41 @@ mod tests {
 
         let liked = Arc::new(AtomicUsize::new(0));
         let handler = MockCommentHandler {
+            source: MsgSource::Comment,
             liked: Arc::clone(&liked),
             messages: vec![comment_message("1:2", false)],
+        };
+
+        let result = handler
+            .handle_likes_only(&test_account(), &state)
+            .await
+            .unwrap();
+
+        let _ = std::fs::remove_dir_all(data_dir);
+
+        assert_eq!(1, result.like_success_count);
+        assert_eq!(1, liked.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn dynamic_comments_use_their_own_like_setting() {
+        let data_dir = temp_data_dir("likes-dynamic-comments");
+        let state = AutoReplyState::new_for_test(data_dir.clone()).unwrap();
+        state
+            .update_settings(|settings| {
+                settings.enabled = false;
+                settings.channels.comment.like_comments = false;
+                settings.channels.dynamic.like_comments = true;
+                settings.channels.dynamic.reply.enabled = false;
+            })
+            .await
+            .unwrap();
+
+        let liked = Arc::new(AtomicUsize::new(0));
+        let handler = MockCommentHandler {
+            source: MsgSource::Dynamic,
+            liked: Arc::clone(&liked),
+            messages: vec![comment_message("100:2", false)],
         };
 
         let result = handler

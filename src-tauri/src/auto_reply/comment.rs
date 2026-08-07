@@ -15,6 +15,12 @@ const WBI_CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 type WbiKeys = (String, String);
 type WbiCacheEntry = (WbiKeys, Instant);
 
+#[derive(Debug, Clone, Copy)]
+enum CommentKind {
+    Video,
+    Dynamic,
+}
+
 #[derive(Debug, Clone)]
 struct CommentTarget {
     oid: u64,
@@ -24,12 +30,22 @@ struct CommentTarget {
 }
 
 pub struct CommentHandler {
+    kind: CommentKind,
     wbi_cache: Arc<Mutex<Option<WbiCacheEntry>>>,
 }
 
 impl CommentHandler {
     pub fn new() -> Self {
+        Self::with_kind(CommentKind::Video)
+    }
+
+    pub fn dynamic() -> Self {
+        Self::with_kind(CommentKind::Dynamic)
+    }
+
+    fn with_kind(kind: CommentKind) -> Self {
         Self {
+            kind,
             wbi_cache: Arc::new(Mutex::new(None)),
         }
     }
@@ -728,34 +744,36 @@ impl CommentHandler {
 #[async_trait]
 impl MessageHandler for CommentHandler {
     fn name(&self) -> &'static str {
-        "评论处理器"
+        match self.kind {
+            CommentKind::Video => "视频评论处理器",
+            CommentKind::Dynamic => "动态评论处理器",
+        }
     }
 
     fn source_type(&self) -> MsgSource {
-        MsgSource::Comment
+        match self.kind {
+            CommentKind::Video => MsgSource::Comment,
+            CommentKind::Dynamic => MsgSource::Dynamic,
+        }
     }
 
     async fn fetch_messages(&self, account: &UserInfo) -> Result<Vec<Message>, String> {
-        let videos = self.get_videos(account).await?;
-        let dynamics = match self.get_dynamics(account).await {
-            Ok(dynamics) => dynamics,
-            Err(error) => {
-                log::warn!("获取动态失败，本轮跳过动态评论: {}", error);
-                Vec::new()
-            }
-        };
-        let mut targets: Vec<CommentTarget> = videos
-            .into_iter()
-            .take(10)
-            .map(|aid| CommentTarget {
-                oid: aid,
-                reply_type: 1,
-                referer: format!("https://www.bilibili.com/video/av{}", aid),
-                label: "视频",
-            })
-            .collect();
-        targets.extend(
-            dynamics
+        let targets: Vec<CommentTarget> = match self.kind {
+            CommentKind::Video => self
+                .get_videos(account)
+                .await?
+                .into_iter()
+                .take(10)
+                .map(|aid| CommentTarget {
+                    oid: aid,
+                    reply_type: 1,
+                    referer: format!("https://www.bilibili.com/video/av{}", aid),
+                    label: "视频",
+                })
+                .collect(),
+            CommentKind::Dynamic => self
+                .get_dynamics(account)
+                .await?
                 .into_iter()
                 .take(10)
                 .map(|dynamic_id| CommentTarget {
@@ -763,20 +781,17 @@ impl MessageHandler for CommentHandler {
                     reply_type: 11,
                     referer: format!("https://t.bilibili.com/{}", dynamic_id),
                     label: "动态",
-                }),
-        );
-        log::info!(
-            "共获取到 {} 个视频、{} 个动态，开始检查评论",
-            targets.iter().filter(|t| t.reply_type == 1).count(),
-            targets.iter().filter(|t| t.reply_type == 11).count()
-        );
+                })
+                .collect(),
+        };
+        log::info!("共获取到 {} 个{}，开始检查评论", targets.len(), self.name());
         if targets.is_empty() {
             return Ok(Vec::new());
         }
 
         let my_mid = account.uid.parse::<i64>().unwrap_or(0);
         let mut all = Vec::new();
-        // 每次分别处理最近10个视频和动态，避免单一来源占满本轮。
+        // 每轮最多处理当前渠道最近10个目标，避免扫描时间过长。
         let max_targets = targets.len();
         let mut processed = 0u32;
 
@@ -840,7 +855,11 @@ impl MessageHandler for CommentHandler {
         state: &AutoReplyState,
     ) -> Result<(), String> {
         let settings = state.get_settings().await;
-        if !settings.channels.comment.like_comments {
+        let like_comments = settings
+            .comment_settings(self.source_type())
+            .map(|channel| channel.like_comments)
+            .unwrap_or(false);
+        if !like_comments {
             return Ok(());
         }
         let oid = message.extra_data["oid"]

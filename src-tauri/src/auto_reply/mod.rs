@@ -32,6 +32,7 @@ impl AutoReplyService {
     pub fn new() -> Self {
         let mut registry = HandlerRegistry::new();
         registry.register(Box::new(comment::CommentHandler::new()));
+        registry.register(Box::new(comment::CommentHandler::dynamic()));
         registry.register(Box::new(direct_message::DirectMessageHandler::new()));
         registry.register(Box::new(follow::FollowHandler::new()));
         Self { registry }
@@ -48,7 +49,12 @@ impl AutoReplyService {
             let settings = state.get_settings().await;
 
             let replies_enabled = settings.enabled && settings.channels.any_enabled();
-            let likes_enabled = settings.channels.comment.like_comments;
+            let likes_enabled = MsgSource::COMMENT_SOURCES.iter().any(|source| {
+                settings
+                    .comment_settings(*source)
+                    .map(|channel| channel.like_comments)
+                    .unwrap_or(false)
+            });
             if !replies_enabled && !likes_enabled {
                 next_poll = schedule_next_poll(
                     poll_started_at,
@@ -117,30 +123,33 @@ impl AutoReplyService {
                 }
             }
 
-            if settings.channels.comment.like_comments
-                && (!settings.enabled || !settings.channels.comment.reply.enabled)
-            {
-                if let Some(handler) = self.registry.get_handler(&MsgSource::Comment) {
-                    match handler.handle_likes_only(&account, state).await {
-                        Ok(result) => {
-                            if result.like_success_count > 0 || result.like_error_count > 0 {
-                                log::info!(
+            for source in MsgSource::COMMENT_SOURCES {
+                let Some(channel) = settings.comment_settings(source) else {
+                    continue;
+                };
+                if channel.like_comments && (!settings.enabled || !channel.reply.enabled) {
+                    if let Some(handler) = self.registry.get_handler(&source) {
+                        match handler.handle_likes_only(&account, state).await {
+                            Ok(result) => {
+                                if result.like_success_count > 0 || result.like_error_count > 0 {
+                                    log::info!(
                                     "{} \u{70b9}\u{8d5e}\u{5904}\u{7406}\u{5b8c}\u{6210}: \u{70b9}\u{8d5e}\u{6210}\u{529f}={}, \u{70b9}\u{8d5e}\u{5931}\u{8d25}={}",
                                     handler.name(),
                                     result.like_success_count,
                                     result.like_error_count
                                 );
+                                }
+                                if result.stopped_by_rate_limit {
+                                    log::warn!("{} \u{70b9}\u{8d5e}\u{89e6}\u{53d1}\u{98ce}\u{63a7}\u{9650}\u{5236}\u{ff0c}\u{505c}\u{6b62}\u{5904}\u{7406}", handler.name());
+                                }
                             }
-                            if result.stopped_by_rate_limit {
-                                log::warn!("{} \u{70b9}\u{8d5e}\u{89e6}\u{53d1}\u{98ce}\u{63a7}\u{9650}\u{5236}\u{ff0c}\u{505c}\u{6b62}\u{5904}\u{7406}", handler.name());
+                            Err(e) => {
+                                log::error!(
+                                    "{} \u{70b9}\u{8d5e}\u{5904}\u{7406}\u{5931}\u{8d25}: {}",
+                                    handler.name(),
+                                    e
+                                );
                             }
-                        }
-                        Err(e) => {
-                            log::error!(
-                                "{} \u{70b9}\u{8d5e}\u{5904}\u{7406}\u{5931}\u{8d25}: {}",
-                                handler.name(),
-                                e
-                            );
                         }
                     }
                 }
@@ -234,6 +243,11 @@ pub async fn test_reply() -> Result<String, String> {
 pub async fn manual_reply_comments() -> Result<String, String> {
     let service = AutoReplyService::new();
     service.manual_trigger(Some(MsgSource::Comment)).await
+}
+
+pub async fn manual_reply_dynamic_comments() -> Result<String, String> {
+    let service = AutoReplyService::new();
+    service.manual_trigger(Some(MsgSource::Dynamic)).await
 }
 
 pub async fn start_auto_reply_service() {

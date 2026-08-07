@@ -26,20 +26,25 @@ pub(crate) fn beijing_now() -> chrono::DateTime<FixedOffset> {
 #[serde(rename_all = "camelCase")]
 pub enum MsgSource {
     Comment,
+    Dynamic,
     DirectMessage,
     Follow,
 }
 
 impl MsgSource {
-    pub const ALL: [MsgSource; 3] = [
+    pub const ALL: [MsgSource; 4] = [
         MsgSource::Comment,
+        MsgSource::Dynamic,
         MsgSource::DirectMessage,
         MsgSource::Follow,
     ];
 
+    pub const COMMENT_SOURCES: [MsgSource; 2] = [MsgSource::Comment, MsgSource::Dynamic];
+
     pub fn display_name(&self) -> &'static str {
         match self {
             MsgSource::Comment => "评论",
+            MsgSource::Dynamic => "动态评论",
             MsgSource::DirectMessage => "私信",
             MsgSource::Follow => "关注",
         }
@@ -48,6 +53,7 @@ impl MsgSource {
     pub fn id(&self) -> &'static str {
         match self {
             MsgSource::Comment => "c",
+            MsgSource::Dynamic => "dy",
             MsgSource::DirectMessage => "dm",
             MsgSource::Follow => "f",
         }
@@ -101,15 +107,46 @@ impl Default for CommentReplySettings {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutoReplyChannels {
     #[serde(default)]
     pub comment: CommentReplySettings,
+    #[serde(default)]
+    pub dynamic: CommentReplySettings,
     #[serde(default = "default_direct_message_settings")]
     pub direct_message: ChannelReplySettings,
     #[serde(default = "default_follow_settings")]
     pub follow: ChannelReplySettings,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AutoReplyChannelsWire {
+    #[serde(default)]
+    comment: CommentReplySettings,
+    #[serde(default)]
+    dynamic: Option<CommentReplySettings>,
+    #[serde(default = "default_direct_message_settings")]
+    direct_message: ChannelReplySettings,
+    #[serde(default = "default_follow_settings")]
+    follow: ChannelReplySettings,
+}
+
+impl<'de> Deserialize<'de> for AutoReplyChannels {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = AutoReplyChannelsWire::deserialize(deserializer)?;
+        let dynamic = wire.dynamic.unwrap_or_else(|| wire.comment.clone());
+        Ok(Self {
+            comment: wire.comment,
+            dynamic,
+            direct_message: wire.direct_message,
+            follow: wire.follow,
+        })
+    }
 }
 
 fn default_direct_message_settings() -> ChannelReplySettings {
@@ -130,6 +167,7 @@ impl Default for AutoReplyChannels {
     fn default() -> Self {
         Self {
             comment: CommentReplySettings::default(),
+            dynamic: CommentReplySettings::default(),
             direct_message: default_direct_message_settings(),
             follow: default_follow_settings(),
         }
@@ -138,7 +176,10 @@ impl Default for AutoReplyChannels {
 
 impl AutoReplyChannels {
     pub fn any_enabled(&self) -> bool {
-        self.comment.reply.enabled || self.direct_message.enabled || self.follow.enabled
+        self.comment.reply.enabled
+            || self.dynamic.reply.enabled
+            || self.direct_message.enabled
+            || self.follow.enabled
     }
 }
 
@@ -166,6 +207,7 @@ impl AutoReplySettings {
     pub fn channel(&self, source: MsgSource) -> &ChannelReplySettings {
         match source {
             MsgSource::Comment => &self.channels.comment.reply,
+            MsgSource::Dynamic => &self.channels.dynamic.reply,
             MsgSource::DirectMessage => &self.channels.direct_message,
             MsgSource::Follow => &self.channels.follow,
         }
@@ -176,6 +218,14 @@ impl AutoReplySettings {
             .into_iter()
             .filter(|source| self.channel(*source).enabled)
             .collect()
+    }
+
+    pub fn comment_settings(&self, source: MsgSource) -> Option<&CommentReplySettings> {
+        match source {
+            MsgSource::Comment => Some(&self.channels.comment),
+            MsgSource::Dynamic => Some(&self.channels.dynamic),
+            MsgSource::DirectMessage | MsgSource::Follow => None,
+        }
     }
 }
 
@@ -233,13 +283,20 @@ impl<'de> Deserialize<'de> for AutoReplySettings {
             reply_policy,
         };
 
+        let comment_reply = channel(MsgSource::Comment, ReplyPolicy::PerMessage);
+        let like_comments = wire.like_comments.unwrap_or(true);
+
         Ok(Self {
             enabled: wire.enabled.unwrap_or(true),
             interval: wire.interval.unwrap_or_else(default_interval),
             channels: AutoReplyChannels {
                 comment: CommentReplySettings {
-                    reply: channel(MsgSource::Comment, ReplyPolicy::PerMessage),
-                    like_comments: wire.like_comments.unwrap_or(true),
+                    reply: comment_reply.clone(),
+                    like_comments,
+                },
+                dynamic: CommentReplySettings {
+                    reply: comment_reply,
+                    like_comments,
                 },
                 direct_message: channel(MsgSource::DirectMessage, legacy_policy),
                 follow: channel(MsgSource::Follow, legacy_policy),
@@ -291,6 +348,7 @@ mod tests {
 
         assert_eq!(15, settings.interval);
         assert!(settings.channels.comment.reply.enabled);
+        assert!(settings.channels.dynamic.reply.enabled);
         assert!(settings.channels.direct_message.enabled);
         assert!(!settings.channels.follow.enabled);
         assert_eq!(
@@ -307,6 +365,7 @@ mod tests {
         );
         assert_eq!("旧版回复", settings.channels.direct_message.message);
         assert!(!settings.channels.comment.like_comments);
+        assert!(!settings.channels.dynamic.like_comments);
 
         let canonical = serde_json::to_value(settings).unwrap();
         assert!(canonical.get("channels").is_some());
@@ -319,6 +378,7 @@ mod tests {
     fn round_trips_channel_settings() {
         let mut settings = AutoReplySettings::default();
         settings.channels.comment.reply.message = "评论回复".to_string();
+        settings.channels.dynamic.reply.message = "动态回复".to_string();
         settings.channels.direct_message.message = "私信回复".to_string();
         settings.channels.follow.message = "关注回复".to_string();
 
@@ -326,7 +386,35 @@ mod tests {
         let decoded: AutoReplySettings = serde_json::from_str(&json).unwrap();
 
         assert_eq!("评论回复", decoded.channels.comment.reply.message);
+        assert_eq!("动态回复", decoded.channels.dynamic.reply.message);
         assert_eq!("私信回复", decoded.channels.direct_message.message);
         assert_eq!("关注回复", decoded.channels.follow.message);
+    }
+
+    #[test]
+    fn existing_channel_settings_are_copied_to_new_dynamic_channel() {
+        let stored = serde_json::json!({
+            "enabled": true,
+            "interval": 5,
+            "channels": {
+                "comment": {
+                    "enabled": false,
+                    "message": "原评论回复",
+                    "replyPolicy": "oncePerUser",
+                    "likeComments": false
+                }
+            },
+            "history": []
+        });
+
+        let settings: AutoReplySettings = serde_json::from_value(stored).unwrap();
+
+        assert!(!settings.channels.dynamic.reply.enabled);
+        assert_eq!("原评论回复", settings.channels.dynamic.reply.message);
+        assert_eq!(
+            ReplyPolicy::OncePerUser,
+            settings.channels.dynamic.reply.reply_policy
+        );
+        assert!(!settings.channels.dynamic.like_comments);
     }
 }
