@@ -15,6 +15,14 @@ const WBI_CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 type WbiKeys = (String, String);
 type WbiCacheEntry = (WbiKeys, Instant);
 
+#[derive(Debug, Clone)]
+struct CommentTarget {
+    oid: u64,
+    reply_type: u32,
+    referer: String,
+    label: &'static str,
+}
+
 pub struct CommentHandler {
     wbi_cache: Arc<Mutex<Option<WbiCacheEntry>>>,
 }
@@ -197,6 +205,105 @@ impl CommentHandler {
         Ok(videos)
     }
 
+    fn value_as_u64(value: &serde_json::Value) -> Option<u64> {
+        value
+            .as_u64()
+            .or_else(|| value.as_i64().and_then(|value| u64::try_from(value).ok()))
+            .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
+    }
+
+    fn dynamic_id(item: &serde_json::Value, my_mid: i64) -> Option<u64> {
+        let author_mid = Self::value_as_u64(&item["modules"]["module_author"]["mid"])
+            .or_else(|| Self::value_as_u64(&item["card"]["desc"]["user_id"]))
+            .or_else(|| Self::value_as_u64(&item["card"]["desc"]["uid"]))
+            .or_else(|| Self::value_as_u64(&item["desc"]["user_id"]))
+            .or_else(|| Self::value_as_u64(&item["desc"]["uid"]));
+        if author_mid.is_some() && author_mid != u64::try_from(my_mid).ok() {
+            return None;
+        }
+
+        Self::value_as_u64(&item["id"])
+            .or_else(|| Self::value_as_u64(&item["id_str"]))
+            .or_else(|| Self::value_as_u64(&item["dynamic_id"]))
+            .or_else(|| Self::value_as_u64(&item["card"]["desc"]["dynamic_id"]))
+            .or_else(|| Self::value_as_u64(&item["desc"]["dynamic_id"]))
+    }
+
+    async fn get_dynamics(&self, account: &UserInfo) -> Result<Vec<u64>, String> {
+        let my_mid = account.uid.parse::<i64>().unwrap_or(0);
+        let referer = format!("https://space.bilibili.com/{}/dynamic", account.uid);
+        let params = [
+            ("host_mid", account.uid.as_str()),
+            ("page", "1"),
+            ("offset", ""),
+            ("features", "itemOpusStyle"),
+        ];
+        let mut dynamics = Vec::new();
+
+        match Self::browser_headers(
+            get_http_client()
+                .get("https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all")
+                .header("Cookie", &account.cookie)
+                .header("Referer", &referer),
+        )
+        .query(&params)
+        .send()
+        .await
+        {
+            Ok(resp) => match resp_to_json(resp).await {
+                Ok(json) if json["code"] == 0 => {
+                    if let Some(items) = json["data"]["items"].as_array() {
+                        for item in items {
+                            if let Some(id) = Self::dynamic_id(item, my_mid) {
+                                dynamics.push(id);
+                            }
+                        }
+                    }
+                }
+                Ok(json) => log::warn!(
+                    "获取动态列表返回: code={}, msg={}",
+                    json["code"],
+                    json["message"]
+                ),
+                Err(error) => log::warn!("解析动态列表失败: {}", error),
+            },
+            Err(error) => log::warn!("请求动态列表失败: {}", error),
+        }
+
+        if dynamics.is_empty() {
+            let old_params = [
+                ("host_uid", account.uid.as_str()),
+                ("offset_dynamic_id", "0"),
+                ("need_top", "1"),
+                ("platform", "web"),
+            ];
+            let old_url = "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/space_history";
+            let json = self
+                .fetch_json(old_url, &old_params, &account.cookie, &referer)
+                .await?;
+            if json["code"] == 0 {
+                if let Some(cards) = json["data"]["cards"].as_array() {
+                    for card in cards {
+                        let item = if let Some(card_text) = card["card"].as_str() {
+                            serde_json::from_str(card_text).unwrap_or_else(|_| card.clone())
+                        } else {
+                            card.clone()
+                        };
+                        if let Some(id) = Self::dynamic_id(card, my_mid)
+                            .or_else(|| Self::dynamic_id(&item, my_mid))
+                        {
+                            dynamics.push(id);
+                        }
+                    }
+                }
+            }
+        }
+
+        dynamics.sort_unstable_by(|left, right| right.cmp(left));
+        dynamics.dedup();
+        Ok(dynamics)
+    }
+
     fn is_replied(reply: &serde_json::Value, my_mid: i64) -> bool {
         if let Some(subs) = reply["replies"].as_array() {
             if subs
@@ -212,29 +319,29 @@ impl CommentHandler {
     async fn get_comments(
         &self,
         account: &UserInfo,
-        aid: u64,
+        target: &CommentTarget,
         my_mid: i64,
     ) -> Result<Vec<Message>, String> {
-        log::info!("获取视频 aid={} 的评论", aid);
+        log::info!("获取{} oid={} 的评论", target.label, target.oid);
 
         if let Ok(wbi_keys) = self.ensure_wbi_keys(account).await {
             match self
-                .get_comments_cursor(account, aid, my_mid, &wbi_keys)
+                .get_comments_cursor(account, target, my_mid, &wbi_keys)
                 .await
             {
                 Ok(messages) => {
                     if !messages.is_empty() {
-                        log::info!("aid={} 找到 {} 条未回复评论", aid, messages.len());
+                        log::info!("oid={} 找到 {} 条未回复评论", target.oid, messages.len());
                         return Ok(messages);
                     }
                     // 部分账号下 WBI 接口会错误地返回空列表，需用旧接口补抓。
-                    log::warn!("aid={} WBI接口返回空评论，降级到旧分页接口", aid);
+                    log::warn!("oid={} WBI接口返回空评论，降级到旧分页接口", target.oid);
                 }
                 Err(error) => log::warn!("WBI评论接口失败，降级到旧接口: {}", error),
             }
         }
 
-        self.get_comments_pn(account, aid, my_mid).await
+        self.get_comments_pn(account, target, my_mid).await
     }
 
     async fn fetch_json(
@@ -284,7 +391,7 @@ impl CommentHandler {
     async fn get_comments_cursor(
         &self,
         account: &UserInfo,
-        aid: u64,
+        target: &CommentTarget,
         my_mid: i64,
         keys: &WbiKeys,
     ) -> Result<Vec<Message>, String> {
@@ -294,8 +401,8 @@ impl CommentHandler {
 
         for page in 0..30u32 {
             let mut params = vec![
-                ("type".to_string(), "1".to_string()),
-                ("oid".to_string(), aid.to_string()),
+                ("type".to_string(), target.reply_type.to_string()),
+                ("oid".to_string(), target.oid.to_string()),
                 ("mode".to_string(), "2".to_string()),
                 ("ps".to_string(), "30".to_string()),
                 ("next".to_string(), next.to_string()),
@@ -306,10 +413,8 @@ impl CommentHandler {
                 .map(|(k, v)| (k.as_str(), v.as_str()))
                 .collect();
             let url = "https://api.bilibili.com/x/v2/reply/main";
-            let referer = format!("https://www.bilibili.com/video/av{}", aid);
-
             let json = self
-                .fetch_json(url, &param_refs, &account.cookie, &referer)
+                .fetch_json(url, &param_refs, &account.cookie, &target.referer)
                 .await?;
 
             if json["code"] != 0 {
@@ -328,7 +433,7 @@ impl CommentHandler {
                 .map(|a| a.to_vec())
                 .unwrap_or_default();
             let count = replies.len();
-            log::info!("aid={} 游标第{}页: {}条", aid, page, count);
+            log::info!("oid={} 游标第{}页: {}条", target.oid, page, count);
             if count == 0 {
                 break;
             }
@@ -352,16 +457,16 @@ impl CommentHandler {
                     .to_string();
 
                 messages.push(Message {
-                    id: format!("{}:{}", aid, rpid),
+                    id: format!("{}:{}", target.oid, rpid),
                     user_id: mid.to_string(),
                     user_name: nickname,
                     content: if comment_text.is_empty() { None } else { Some(comment_text) },
-                    extra_data: serde_json::json!({ "aid": aid, "rpid": rpid, "already_replied": already_replied }),
+                    extra_data: serde_json::json!({ "oid": target.oid, "aid": target.oid, "reply_type": target.reply_type, "referer": target.referer, "rpid": rpid, "already_replied": already_replied }),
                 });
             }
             log::info!(
-                "aid={} 第{}页: {}条通过过滤, {}条已回复",
-                aid,
+                "oid={} 第{}页: {}条通过过滤, {}条已回复",
+                target.oid,
                 page,
                 count.saturating_sub(filtered as usize),
                 filtered
@@ -377,37 +482,40 @@ impl CommentHandler {
             tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         }
 
-        log::info!("aid={} 游标API共找到 {} 条未回复评论", aid, messages.len());
+        log::info!(
+            "oid={} 游标API共找到 {} 条未回复评论",
+            target.oid,
+            messages.len()
+        );
         Ok(messages)
     }
 
     async fn get_comments_pn(
         &self,
         account: &UserInfo,
-        aid: u64,
+        target: &CommentTarget,
         my_mid: i64,
     ) -> Result<Vec<Message>, String> {
         let mut messages = Vec::new();
 
         for pn in 1..=30u32 {
-            let aid_s = aid.to_string();
+            let oid_s = target.oid.to_string();
+            let reply_type_s = target.reply_type.to_string();
             let pn_s = pn.to_string();
-            let params = &[
-                ("type", "1"),
-                ("oid", aid_s.as_str()),
+            let params: &[(&str, &str)] = &[
+                ("type", reply_type_s.as_str()),
+                ("oid", oid_s.as_str()),
                 ("sort", "0"),
                 ("ps", "20"),
                 ("pn", pn_s.as_str()),
                 ("nohot", "1"),
             ];
-            let referer = format!("https://www.bilibili.com/video/av{}", aid);
-
             let json = self
                 .fetch_json(
                     "https://api.bilibili.com/x/v2/reply",
                     params,
                     &account.cookie,
-                    &referer,
+                    &target.referer,
                 )
                 .await?;
 
@@ -442,15 +550,20 @@ impl CommentHandler {
                     .to_string();
 
                 messages.push(Message {
-                    id: format!("{}:{}", aid, rpid),
+                    id: format!("{}:{}", target.oid, rpid),
                     user_id: mid.to_string(),
                     user_name: nickname,
                     content: if comment_text.is_empty() { None } else { Some(comment_text) },
-                    extra_data: serde_json::json!({ "aid": aid, "rpid": rpid, "already_replied": already_replied }),
+                    extra_data: serde_json::json!({ "oid": target.oid, "aid": target.oid, "reply_type": target.reply_type, "referer": target.referer, "rpid": rpid, "already_replied": already_replied }),
                 });
             }
             if filtered > 0 {
-                log::debug!("aid={} pn第{}页: 过滤{}条已回复评论", aid, pn, filtered);
+                log::debug!(
+                    "oid={} pn第{}页: 过滤{}条已回复评论",
+                    target.oid,
+                    pn,
+                    filtered
+                );
             }
 
             let count = json["data"]["page"]["count"].as_u64().unwrap_or(0);
@@ -466,7 +579,9 @@ impl CommentHandler {
     async fn reply_to_comment(
         &self,
         account: &UserInfo,
-        aid: u64,
+        oid: u64,
+        reply_type: u32,
+        referer: &str,
         rpid: u64,
         message: &str,
     ) -> Result<(), String> {
@@ -475,23 +590,27 @@ impl CommentHandler {
             return Err("未找到 CSRF token".into());
         }
 
+        let reply_type_s = reply_type.to_string();
+        let oid_s = oid.to_string();
+        let rpid_s = rpid.to_string();
+        let csrf_s = csrf.clone();
         let resp = get_http_client()
             .post("https://api.bilibili.com/x/v2/reply/add")
             .header("Cookie", &account.cookie)
-            .header("Referer", format!("https://www.bilibili.com/video/av{}", aid))
+            .header("Referer", referer)
             .header("Origin", "https://www.bilibili.com")
             .header("Accept", ACCEPT_JSON)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             .form(&[
-                ("type", "1"),
-                ("oid", &aid.to_string()),
+                ("type", reply_type_s.as_str()),
+                ("oid", oid_s.as_str()),
                 ("message", message),
-                ("root", &rpid.to_string()),
-                ("parent", &rpid.to_string()),
+                ("root", rpid_s.as_str()),
+                ("parent", rpid_s.as_str()),
                 ("plat", "1"),
-                ("csrf", &csrf),
-                ("csrf_token", &csrf),
+                ("csrf", csrf_s.as_str()),
+                ("csrf_token", csrf_s.as_str()),
             ])
             .send()
             .await
@@ -507,7 +626,14 @@ impl CommentHandler {
         Ok(())
     }
 
-    async fn like_comment(&self, account: &UserInfo, aid: u64, rpid: u64) -> Result<(), String> {
+    async fn like_comment(
+        &self,
+        account: &UserInfo,
+        oid: u64,
+        reply_type: u32,
+        referer: &str,
+        rpid: u64,
+    ) -> Result<(), String> {
         let csrf = extract_csrf(&account.cookie);
         if csrf.is_empty() {
             return Err("未找到 CSRF token".into());
@@ -518,6 +644,9 @@ impl CommentHandler {
         let try_like = |delay: u64| {
             let csrf = csrf.clone();
             let cookie = cookie.clone();
+            let reply_type_s = reply_type.to_string();
+            let oid_s = oid.to_string();
+            let rpid_s = rpid.to_string();
             async move {
                 if delay > 0 {
                     tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
@@ -525,15 +654,15 @@ impl CommentHandler {
                 let resp = get_http_client()
                 .post("https://api.bilibili.com/x/v2/reply/action")
                 .header("Cookie", &cookie)
-                .header("Referer", format!("https://www.bilibili.com/video/av{}", aid))
+                .header("Referer", referer)
                 .header("Origin", "https://www.bilibili.com")
                 .header("Accept", ACCEPT_JSON)
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .form(&[
-                    ("type", "1"),
-                    ("oid", &aid.to_string()),
-                    ("rpid", &rpid.to_string()),
+                    ("type", reply_type_s.as_str()),
+                    ("oid", oid_s.as_str()),
+                    ("rpid", rpid_s.as_str()),
                     ("action", "1"),
                     ("csrf", &csrf),
                     ("csrf_token", &csrf),
@@ -574,8 +703,8 @@ impl CommentHandler {
         if let Err(ref e) = result {
             if e == "HTML_RESPONSE" {
                 log::warn!(
-                    "点赞API收到限流HTML，等待3秒重试 (aid={}, rpid={})",
-                    aid,
+                    "点赞API收到限流HTML，等待3秒重试 (oid={}, rpid={})",
+                    oid,
                     rpid
                 );
                 result = try_like(3000).await;
@@ -608,36 +737,73 @@ impl MessageHandler for CommentHandler {
 
     async fn fetch_messages(&self, account: &UserInfo) -> Result<Vec<Message>, String> {
         let videos = self.get_videos(account).await?;
-        log::info!("共获取到 {} 个视频，开始检查评论", videos.len());
-        if videos.is_empty() {
+        let dynamics = match self.get_dynamics(account).await {
+            Ok(dynamics) => dynamics,
+            Err(error) => {
+                log::warn!("获取动态失败，本轮跳过动态评论: {}", error);
+                Vec::new()
+            }
+        };
+        let mut targets: Vec<CommentTarget> = videos
+            .into_iter()
+            .take(10)
+            .map(|aid| CommentTarget {
+                oid: aid,
+                reply_type: 1,
+                referer: format!("https://www.bilibili.com/video/av{}", aid),
+                label: "视频",
+            })
+            .collect();
+        targets.extend(
+            dynamics
+                .into_iter()
+                .take(10)
+                .map(|dynamic_id| CommentTarget {
+                    oid: dynamic_id,
+                    reply_type: 11,
+                    referer: format!("https://t.bilibili.com/{}", dynamic_id),
+                    label: "动态",
+                }),
+        );
+        log::info!(
+            "共获取到 {} 个视频、{} 个动态，开始检查评论",
+            targets.iter().filter(|t| t.reply_type == 1).count(),
+            targets.iter().filter(|t| t.reply_type == 11).count()
+        );
+        if targets.is_empty() {
             return Ok(Vec::new());
         }
 
         let my_mid = account.uid.parse::<i64>().unwrap_or(0);
         let mut all = Vec::new();
-        // 每次最多处理10个视频，避免超时
-        let max_videos = videos.len().min(10);
+        // 每次分别处理最近10个视频和动态，避免单一来源占满本轮。
+        let max_targets = targets.len();
         let mut processed = 0u32;
 
-        for (index, aid) in videos[..max_videos].iter().enumerate() {
-            match self.get_comments(account, *aid, my_mid).await {
+        for (index, target) in targets[..max_targets].iter().enumerate() {
+            match self.get_comments(account, target, my_mid).await {
                 Ok(msgs) => {
                     if !msgs.is_empty() {
-                        log::info!("视频 aid={} 有 {} 条未回复评论", aid, msgs.len());
+                        log::info!(
+                            "{} oid={} 有 {} 条未回复评论",
+                            target.label,
+                            target.oid,
+                            msgs.len()
+                        );
                     }
                     all.extend(msgs);
                     processed += 1;
                 }
-                Err(e) => log::warn!("获取视频 {} 评论失败: {}", aid, e),
+                Err(e) => log::warn!("获取{} oid={} 评论失败: {}", target.label, target.oid, e),
             }
-            if index + 1 < max_videos {
+            if index + 1 < max_targets {
                 // 请求之间保留短暂间隔，避免连续访问触发风控。
                 tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
             }
         }
 
         log::info!(
-            "本轮处理了 {} 个视频，共计 {} 条未回复评论",
+            "本轮处理了 {} 个评论目标，共计 {} 条未回复评论",
             processed,
             all.len()
         );
@@ -650,9 +816,21 @@ impl MessageHandler for CommentHandler {
         message: &Message,
         reply_msg: &str,
     ) -> Result<(), String> {
-        let aid = message.extra_data["aid"].as_u64().ok_or("缺少aid")?;
+        let oid = message.extra_data["oid"]
+            .as_u64()
+            .or_else(|| message.extra_data["aid"].as_u64())
+            .ok_or("缺少评论目标 oid")?;
+        let reply_type = message.extra_data["reply_type"].as_u64().unwrap_or(1) as u32;
+        let referer = message.extra_data["referer"].as_str().unwrap_or_else(|| {
+            if reply_type == 11 {
+                "https://t.bilibili.com/"
+            } else {
+                "https://www.bilibili.com/"
+            }
+        });
         let rpid = message.extra_data["rpid"].as_u64().ok_or("缺少rpid")?;
-        self.reply_to_comment(account, aid, rpid, reply_msg).await
+        self.reply_to_comment(account, oid, reply_type, referer, rpid, reply_msg)
+            .await
     }
 
     async fn on_reply_success(
@@ -665,8 +843,20 @@ impl MessageHandler for CommentHandler {
         if !settings.channels.comment.like_comments {
             return Ok(());
         }
-        let aid = message.extra_data["aid"].as_u64().ok_or("缺少aid")?;
+        let oid = message.extra_data["oid"]
+            .as_u64()
+            .or_else(|| message.extra_data["aid"].as_u64())
+            .ok_or("缺少评论目标 oid")?;
+        let reply_type = message.extra_data["reply_type"].as_u64().unwrap_or(1) as u32;
+        let referer = message.extra_data["referer"].as_str().unwrap_or_else(|| {
+            if reply_type == 11 {
+                "https://t.bilibili.com/"
+            } else {
+                "https://www.bilibili.com/"
+            }
+        });
         let rpid = message.extra_data["rpid"].as_u64().ok_or("缺少rpid")?;
-        self.like_comment(account, aid, rpid).await
+        self.like_comment(account, oid, reply_type, referer, rpid)
+            .await
     }
 }

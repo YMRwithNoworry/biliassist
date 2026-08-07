@@ -87,107 +87,11 @@
             </div>
           </div>
 
-          <div class="surface-section provider-section">
-            <div class="section-heading">
-              <div>
-                <h2>AI 服务</h2>
-                <p>接口、模型和密钥由三个回复渠道共用。</p>
-              </div>
-            </div>
-
-            <div class="preset-group" aria-label="AI 服务预设">
-              <button type="button" @click="applyPreset('deepseek')">DeepSeek</button>
-              <button type="button" @click="applyPreset('openai')">OpenAI</button>
-              <button type="button" @click="applyPreset('anthropic')">Anthropic</button>
-              <button type="button" @click="applyPreset('ollama')">Ollama</button>
-            </div>
-
-            <div class="provider-grid">
-              <div class="form-field">
-                <label for="ai-api-format">接口格式</label>
-                <select
-                  id="ai-api-format"
-                  v-model="settings.aiProvider.apiFormat"
-                  @change="save"
-                >
-                  <option value="openAiChatCompletions">OpenAI Chat Completions</option>
-                  <option value="openAiCompletions">OpenAI Completions</option>
-                  <option value="openAiResponses">OpenAI Responses</option>
-                  <option value="anthropicMessages">Anthropic Messages</option>
-                </select>
-              </div>
-
-              <div class="form-field wide-field">
-                <label for="ai-base-url">API Base URL</label>
-                <input
-                  id="ai-base-url"
-                  v-model.trim="settings.aiProvider.baseUrl"
-                  type="text"
-                  placeholder="https://api.openai.com/v1"
-                  @blur="save"
-                />
-              </div>
-
-              <div class="form-field">
-                <label for="ai-model">模型名称</label>
-                <input
-                  id="ai-model"
-                  v-model.trim="settings.aiProvider.model"
-                  type="text"
-                  placeholder="gpt-4o-mini"
-                  @blur="save"
-                />
-              </div>
-
-              <div class="form-field wide-field">
-                <label for="ai-api-key">API Key</label>
-                <div class="input-with-action">
-                  <input
-                    id="ai-api-key"
-                    v-model="settings.aiProvider.apiKey"
-                    :type="showApiKey ? 'text' : 'password'"
-                    placeholder="sk-..."
-                    autocomplete="off"
-                    @blur="save"
-                  />
-                  <button
-                    class="field-icon-button"
-                    type="button"
-                    :aria-label="showApiKey ? '隐藏 API Key' : '显示 API Key'"
-                    :title="showApiKey ? '隐藏 API Key' : '显示 API Key'"
-                    @click="showApiKey = !showApiKey"
-                  >
-                    <svg v-if="!showApiKey" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                    <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="m3 3 18 18M10.6 10.7a2 2 0 0 0 2.7 2.7M9.9 5.1A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a17.3 17.3 0 0 1-2.1 3.2M6.2 6.2C3.5 8.1 2 12 2 12s3.5 7 10 7a10.6 10.6 0 0 0 4.1-.8" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div class="inline-action-row">
-              <button class="button secondary" type="button" :disabled="aiTesting" @click="testAiReply">
-                <span v-if="aiTesting" class="button-spinner" aria-hidden="true"></span>
-                <svg v-else width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="m13 2-2 8h7l-7 12 2-8H6l7-12Z" />
-                </svg>
-                {{ aiTesting ? '测试中' : '测试 AI 服务' }}
-              </button>
-              <span v-if="aiTestResult" class="inline-result" :class="{ error: aiTestError }">
-                {{ aiTestResult }}
-              </span>
-            </div>
-          </div>
-
           <div class="surface-section channel-section">
             <div class="section-heading channel-heading">
               <div>
                 <h2>分渠道配置</h2>
-                <p>回复内容、AI 提示词和回复策略互不影响。</p>
+                <p>回复内容和回复策略互不影响。</p>
               </div>
             </div>
 
@@ -273,49 +177,6 @@
                 </div>
               </div>
 
-              <div class="channel-ai-section">
-                <div class="setting-row">
-                  <div class="setting-copy">
-                    <strong>使用 AI 生成回复</strong>
-                    <span>关闭时使用当前渠道的固定回复内容。</span>
-                  </div>
-                  <label class="toggle">
-                    <input v-model="currentChannel.ai.enabled" type="checkbox" @change="save" />
-                    <span class="toggle-track"></span>
-                  </label>
-                </div>
-
-                <div v-if="currentChannel.ai.enabled" class="ai-prompt-grid">
-                  <div class="form-field full-width">
-                    <label :for="`${activeChannel}-system-prompt`">系统提示词</label>
-                    <textarea
-                      :id="`${activeChannel}-system-prompt`"
-                      v-model="currentChannel.ai.systemPrompt"
-                      rows="3"
-                      placeholder="设定当前渠道的角色、语气和回复风格"
-                      @blur="save"
-                    ></textarea>
-                  </div>
-
-                  <div class="form-field full-width">
-                    <label :for="`${activeChannel}-prompt-template`">回复提示词模板</label>
-                    <textarea
-                      :id="`${activeChannel}-prompt-template`"
-                      v-model="currentChannel.ai.promptTemplate"
-                      rows="4"
-                      placeholder="用户「{用户名}」通过{来源}发来：「{消息内容}」"
-                      @blur="save"
-                    ></textarea>
-                    <div class="variable-row">
-                      <span>插入变量</span>
-                      <button type="button" @click="insertVar('用户名')">{用户名}</button>
-                      <button type="button" @click="insertVar('消息内容')">{消息内容}</button>
-                      <button type="button" @click="insertVar('来源')">{来源}</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
               <div class="channel-actions">
                 <button class="button secondary" type="button" :disabled="previewRunning" @click="testReply">
                   <span v-if="previewRunning" class="button-spinner" aria-hidden="true"></span>
@@ -335,7 +196,7 @@
                   <svg v-else width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="m13 2-2 8h7l-7 12 2-8H6l7-12Z" />
                   </svg>
-                  立即处理视频评论
+                  立即处理评论
                 </button>
               </div>
 
@@ -384,8 +245,6 @@ import { invoke } from '@tauri-apps/api/core'
 import { useAuthStore } from '../stores/auth'
 
 const DEFAULT_MESSAGE = '感谢您的留言！我会尽快回复。'
-const DEFAULT_AI_BASE_URL = 'https://api.openai.com/v1'
-const DEFAULT_AI_MODEL = 'gpt-4o-mini'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -394,22 +253,11 @@ const createChannel = (replyPolicy) => ({
   enabled: true,
   message: DEFAULT_MESSAGE,
   replyPolicy,
-  ai: {
-    enabled: false,
-    systemPrompt: '',
-    promptTemplate: '',
-  },
 })
 
 const createSettings = () => ({
   enabled: true,
   interval: 60,
-  aiProvider: {
-    apiFormat: 'openAiChatCompletions',
-    baseUrl: DEFAULT_AI_BASE_URL,
-    model: DEFAULT_AI_MODEL,
-    apiKey: '',
-  },
   channels: {
     comment: {
       ...createChannel('perMessage'),
@@ -427,10 +275,6 @@ const autostartEnabled = ref(false)
 const loading = ref(true)
 const loadError = ref('')
 const saveState = ref('idle')
-const showApiKey = ref(false)
-const aiTesting = ref(false)
-const aiTestResult = ref('')
-const aiTestError = ref(false)
 const previewRunning = ref(false)
 const manualRunning = ref(false)
 const actionResult = ref('')
@@ -441,7 +285,7 @@ let saveVersion = 0
 let loaded = false
 
 const channelTabs = [
-  { key: 'comment', label: '评论区', description: '处理视频下的新评论。' },
+  { key: 'comment', label: '评论区', description: '处理视频和动态下的新评论。' },
   { key: 'directMessage', label: '私信', description: '处理未读的一对一私信。' },
   { key: 'follow', label: '关注', description: '向新关注用户发送欢迎私信。' },
 ]
@@ -472,24 +316,13 @@ const normalizeChannel = (channel, fallbackPolicy, legacy) => ({
   enabled: channel?.enabled ?? legacy.enabled,
   message: channel?.message ?? legacy.message,
   replyPolicy: channel?.replyPolicy ?? fallbackPolicy,
-  ai: {
-    enabled: channel?.ai?.enabled ?? legacy.ai.enabled,
-    systemPrompt: channel?.ai?.systemPrompt ?? legacy.ai.systemPrompt,
-    promptTemplate: channel?.ai?.promptTemplate ?? legacy.ai.promptTemplate,
-  },
 })
 
 const normalizeSettings = (raw = {}) => {
   const legacySources = raw.sources || ['comment', 'directMessage', 'follow']
-  const legacyAi = raw.ai || {}
   const legacy = {
     enabled: true,
     message: raw.message || DEFAULT_MESSAGE,
-    ai: {
-      enabled: legacyAi.enabled ?? false,
-      systemPrompt: legacyAi.systemPrompt || '',
-      promptTemplate: legacyAi.promptTemplate || '',
-    },
   }
   const oncePerUser = raw.replyOnlyOnce ?? true
 
@@ -511,12 +344,6 @@ const normalizeSettings = (raw = {}) => {
   return {
     enabled: raw.enabled ?? true,
     interval: raw.interval ?? 60,
-    aiProvider: {
-      apiFormat: raw.aiProvider?.apiFormat || legacyAi.apiFormat || 'openAiChatCompletions',
-      baseUrl: raw.aiProvider?.baseUrl || legacyAi.baseUrl || DEFAULT_AI_BASE_URL,
-      model: raw.aiProvider?.model || legacyAi.model || DEFAULT_AI_MODEL,
-      apiKey: raw.aiProvider?.apiKey || legacyAi.apiKey || '',
-    },
     channels: {
       comment: {
         ...comment,
@@ -588,58 +415,9 @@ const saveInterval = () => {
   save()
 }
 
-const applyPreset = (provider) => {
-  const presets = {
-    deepseek: {
-      apiFormat: 'openAiChatCompletions',
-      baseUrl: 'https://api.deepseek.com',
-      model: 'deepseek-v4-flash',
-    },
-    openai: {
-      apiFormat: 'openAiChatCompletions',
-      baseUrl: DEFAULT_AI_BASE_URL,
-      model: DEFAULT_AI_MODEL,
-    },
-    anthropic: {
-      apiFormat: 'anthropicMessages',
-      baseUrl: 'https://api.anthropic.com/v1',
-      model: 'claude-sonnet-4-20250514',
-    },
-    ollama: {
-      apiFormat: 'openAiChatCompletions',
-      baseUrl: 'http://localhost:11434/v1',
-      model: 'qwen2.5:7b',
-    },
-  }
-  const preset = presets[provider]
-  if (!preset) return
-  Object.assign(settings.aiProvider, preset)
-  save()
-}
-
 const setReplyPolicy = (policy) => {
   currentChannel.value.replyPolicy = policy
   save()
-}
-
-const insertVar = (variable) => {
-  currentChannel.value.ai.promptTemplate += `{${variable}}`
-  save()
-}
-
-const testAiReply = async () => {
-  aiTesting.value = true
-  aiTestResult.value = ''
-  aiTestError.value = false
-  try {
-    await ensureSaved()
-    aiTestResult.value = await invoke('test_ai_reply')
-  } catch (error) {
-    aiTestResult.value = errorMessage(error, '测试失败，请检查 AI 服务配置')
-    aiTestError.value = true
-  } finally {
-    aiTesting.value = false
-  }
 }
 
 const testReply = async () => {
@@ -670,7 +448,7 @@ const manualReply = async () => {
       console.warn('刷新回复记录失败:', error)
     }
   } catch (error) {
-    actionResult.value = errorMessage(error, '处理视频评论失败')
+    actionResult.value = errorMessage(error, '处理评论失败')
     actionError.value = true
   } finally {
     manualRunning.value = false
@@ -944,7 +722,6 @@ onMounted(load)
   font-size: 12px;
 }
 
-.preset-group,
 .segmented-control {
   display: inline-grid;
   grid-auto-flow: column;
@@ -955,11 +732,6 @@ onMounted(load)
   background: #0D1117;
 }
 
-.preset-group {
-  margin-bottom: 18px;
-}
-
-.preset-group button,
 .segmented-control button {
   min-height: 36px;
   padding: 7px 14px;
@@ -972,12 +744,10 @@ onMounted(load)
   cursor: pointer;
 }
 
-.preset-group button:first-child,
 .segmented-control button:first-child {
   border-left: 0;
 }
 
-.preset-group button:hover,
 .segmented-control button:hover {
   background: #21262D;
 }
@@ -988,9 +758,7 @@ onMounted(load)
   font-weight: 600;
 }
 
-.provider-grid,
-.channel-form-grid,
-.ai-prompt-grid {
+.channel-form-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(220px, 0.55fr);
   gap: 16px;
@@ -1205,46 +973,6 @@ onMounted(load)
   margin-top: 20px;
 }
 
-.channel-ai-section {
-  margin-top: 22px;
-  padding-top: 20px;
-  border-top: 1px solid #30363D;
-}
-
-.channel-ai-section > .setting-row {
-  min-height: auto;
-  padding: 0;
-}
-
-.ai-prompt-grid {
-  margin-top: 18px;
-}
-
-.variable-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-
-.variable-row span {
-  margin-right: 2px;
-  color: #8B949E;
-  font-size: 12px;
-}
-
-.variable-row button {
-  min-height: 28px;
-  padding: 4px 8px;
-  border: 1px solid #30363D;
-  border-radius: 6px;
-  background: #21262D;
-  color: #58A6FF;
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-
 .channel-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1385,9 +1113,7 @@ onMounted(load)
     padding: 18px;
   }
 
-  .provider-grid,
-  .channel-form-grid,
-  .ai-prompt-grid {
+  .channel-form-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -1398,11 +1124,6 @@ onMounted(load)
 
   .setting-row {
     gap: 16px;
-  }
-
-  .preset-group {
-    display: grid;
-    width: 100%;
   }
 
   .channel-actions .button {

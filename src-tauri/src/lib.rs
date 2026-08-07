@@ -102,11 +102,6 @@ async fn test_auto_reply() -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn test_ai_reply() -> Result<String, String> {
-    auto_reply::test_ai_reply().await
-}
-
-#[tauri::command]
 async fn manual_reply_video_comments() -> Result<String, String> {
     auto_reply::manual_reply_comments().await
 }
@@ -329,7 +324,6 @@ pub fn run() {
             merge_replied_set,
             merge_liked_set,
             test_auto_reply,
-            test_ai_reply,
             manual_reply_video_comments,
             copy_text_to_clipboard,
             get_current_deep_link,

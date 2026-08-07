@@ -161,31 +161,7 @@ pub trait MessageHandler: Send + Sync {
                 }
             }
 
-            // \u{751f}\u{6210}\u{56de}\u{590d}\u{5185}\u{5bb9}\u{ff1a}\u{4f18}\u{5148}\u{4f7f}\u{7528} AI\u{ff0c}\u{5426}\u{5219}\u{4f7f}\u{7528}\u{6a21}\u{677f}
-            let ai_config = settings.resolved_ai(source);
-            let reply_text = if ai_config.enabled {
-                let source_name = source.display_name();
-                let msg_content = message.content.as_deref().unwrap_or("");
-                match super::ai::generate_reply(
-                    &ai_config,
-                    &message.user_name,
-                    msg_content,
-                    source_name,
-                )
-                .await
-                {
-                    Ok(ai_reply) => {
-                        log::info!("AI \u{751f}\u{6210}\u{56de}\u{590d}\u{6210}\u{529f}: user={}, reply={}", message.user_name, ai_reply);
-                        ai_reply
-                    }
-                    Err(e) => {
-                        log::warn!("AI \u{751f}\u{6210}\u{56de}\u{590d}\u{5931}\u{8d25}\u{ff0c}\u{56de}\u{9000}\u{5230}\u{6a21}\u{677f}: {}", e);
-                        format_message(&channel.message, &message.user_name)
-                    }
-                }
-            } else {
-                format_message(&channel.message, &message.user_name)
-            };
+            let reply_text = format_message(&channel.message, &message.user_name);
 
             match self.send_reply(account, &message, &reply_text).await {
                 Ok(_) => {

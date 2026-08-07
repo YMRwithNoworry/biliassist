@@ -1,4 +1,3 @@
-pub mod ai;
 pub mod comment;
 pub mod direct_message;
 pub mod follow;
@@ -230,16 +229,6 @@ pub async fn test_reply() -> Result<String, String> {
         "\u{6d4b}\u{8bd5}\u{56de}\u{590d}\u{5185}\u{5bb9}:\n{}",
         previews.join("\n")
     ))
-}
-
-pub async fn test_ai_reply() -> Result<String, String> {
-    let state = get_global_state();
-    let settings = state.get_settings().await;
-    let config = models::AiReplyConfig::from_parts(
-        &settings.ai_provider,
-        &models::ChannelAiConfig::default(),
-    );
-    ai::test_ai_config(&config).await
 }
 
 pub async fn manual_reply_comments() -> Result<String, String> {
