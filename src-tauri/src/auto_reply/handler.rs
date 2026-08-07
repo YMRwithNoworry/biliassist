@@ -96,8 +96,9 @@ pub trait MessageHandler: Send + Sync {
         let messages = self.fetch_messages(account).await?;
 
         let mut result = HandleResult::default();
+        let message_count = messages.len();
 
-        for message in messages {
+        for (index, message) in messages.into_iter().enumerate() {
             let event_key = format!("event:{}:{}:{}", account.uid, source.id(), message.id);
             let user_key = format!("user:{}:{}:{}", account.uid, source.id(), message.user_id);
 
@@ -215,7 +216,9 @@ pub trait MessageHandler: Send + Sync {
                 }
             }
 
-            processing_delay().await;
+            if index + 1 < message_count {
+                processing_delay().await;
+            }
         }
 
         Ok(result)
@@ -233,14 +236,17 @@ pub trait MessageHandler: Send + Sync {
 
         let messages = self.fetch_messages(account).await?;
         let mut result = HandleResult::default();
+        let message_count = messages.len();
 
-        for message in messages {
+        for (index, message) in messages.into_iter().enumerate() {
             self.like_comment_if_needed(account, &message, state, &mut result)
                 .await;
             if result.stopped_by_rate_limit {
                 break;
             }
-            processing_delay().await;
+            if index + 1 < message_count {
+                processing_delay().await;
+            }
         }
 
         Ok(result)
@@ -320,7 +326,7 @@ impl Default for HandlerRegistry {
 
 async fn processing_delay() {
     #[cfg(not(test))]
-    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 }
 
 #[cfg(test)]

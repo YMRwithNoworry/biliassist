@@ -6,12 +6,17 @@ use super::wbi;
 use crate::bilibili::UserInfo;
 use async_trait::async_trait;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 const ACCEPT_JSON: &str = "application/json, text/plain, */*";
+const WBI_CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
+
+type WbiKeys = (String, String);
+type WbiCacheEntry = (WbiKeys, Instant);
 
 pub struct CommentHandler {
-    wbi_cache: Arc<Mutex<Option<(String, String)>>>,
+    wbi_cache: Arc<Mutex<Option<WbiCacheEntry>>>,
 }
 
 impl CommentHandler {
@@ -26,16 +31,18 @@ impl CommentHandler {
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     }
 
-    async fn ensure_wbi_keys(&self, account: &UserInfo) -> Result<(String, String), String> {
+    async fn ensure_wbi_keys(&self, account: &UserInfo) -> Result<WbiKeys, String> {
         {
             let cache = self.wbi_cache.lock().await;
-            if let Some(ref keys) = *cache {
-                return Ok(keys.clone());
+            if let Some((keys, cached_at)) = cache.as_ref() {
+                if cached_at.elapsed() < WBI_CACHE_TTL {
+                    return Ok(keys.clone());
+                }
             }
         }
         let keys = wbi::get_wbi_keys(&account.cookie).await?;
         let mut cache = self.wbi_cache.lock().await;
-        *cache = Some(keys.clone());
+        *cache = Some((keys.clone(), Instant::now()));
         Ok(keys)
     }
 
@@ -53,11 +60,7 @@ impl CommentHandler {
         self.get_videos_fallback(account).await
     }
 
-    async fn get_videos_wbi(
-        &self,
-        account: &UserInfo,
-        keys: &(String, String),
-    ) -> Result<Vec<u64>, String> {
+    async fn get_videos_wbi(&self, account: &UserInfo, keys: &WbiKeys) -> Result<Vec<u64>, String> {
         let mut videos = Vec::new();
         let (ref img_key, ref sub_key) = keys;
         let mut page = 1u32;
@@ -215,14 +218,18 @@ impl CommentHandler {
         log::info!("获取视频 aid={} 的评论", aid);
 
         if let Ok(wbi_keys) = self.ensure_wbi_keys(account).await {
-            let msg = self
+            match self
                 .get_comments_cursor(account, aid, my_mid, &wbi_keys)
-                .await;
-            if let Ok(ref m) = msg {
-                if !m.is_empty() {
-                    log::info!("aid={} 找到 {} 条未回复评论", aid, m.len());
-                    return msg;
+                .await
+            {
+                Ok(messages) => {
+                    if !messages.is_empty() {
+                        log::info!("aid={} 找到 {} 条未回复评论", aid, messages.len());
+                    }
+                    // WBI 接口成功返回空列表时，不再重复请求旧分页接口。
+                    return Ok(messages);
                 }
+                Err(error) => log::warn!("WBI评论接口失败，降级到旧接口: {}", error),
             }
         }
 
@@ -278,7 +285,7 @@ impl CommentHandler {
         account: &UserInfo,
         aid: u64,
         my_mid: i64,
-        keys: &(String, String),
+        keys: &WbiKeys,
     ) -> Result<Vec<Message>, String> {
         let mut messages = Vec::new();
         let (ref img_key, ref sub_key) = keys;
@@ -306,6 +313,12 @@ impl CommentHandler {
 
             if json["code"] != 0 {
                 log::info!("评论API code={}, msg={}", json["code"], json["message"]);
+                if messages.is_empty() {
+                    return Err(format!(
+                        "评论API code={}, msg={}",
+                        json["code"], json["message"]
+                    ));
+                }
                 break;
             }
 
@@ -593,11 +606,6 @@ impl MessageHandler for CommentHandler {
     }
 
     async fn fetch_messages(&self, account: &UserInfo) -> Result<Vec<Message>, String> {
-        {
-            let mut cache = self.wbi_cache.lock().await;
-            *cache = None;
-        }
-
         let videos = self.get_videos(account).await?;
         log::info!("共获取到 {} 个视频，开始检查评论", videos.len());
         if videos.is_empty() {
@@ -610,7 +618,7 @@ impl MessageHandler for CommentHandler {
         let max_videos = videos.len().min(10);
         let mut processed = 0u32;
 
-        for aid in &videos[..max_videos] {
+        for (index, aid) in videos[..max_videos].iter().enumerate() {
             match self.get_comments(account, *aid, my_mid).await {
                 Ok(msgs) => {
                     if !msgs.is_empty() {
@@ -621,7 +629,10 @@ impl MessageHandler for CommentHandler {
                 }
                 Err(e) => log::warn!("获取视频 {} 评论失败: {}", aid, e),
             }
-            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            if index + 1 < max_videos {
+                // 请求之间保留短暂间隔，避免连续访问触发风控。
+                tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+            }
         }
 
         log::info!(

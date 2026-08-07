@@ -12,6 +12,17 @@ pub use models::{AutoReplySettings, MsgSource};
 pub use state::get_global_state;
 
 use handler::HandlerRegistry;
+use tokio::time::{Duration, Instant};
+
+const DISABLED_POLL_INTERVAL_SECS: u64 = 5;
+const MIN_POLL_GAP: Duration = Duration::from_millis(250);
+
+fn schedule_next_poll(started_at: Instant, interval_secs: u64, now: Instant) -> Instant {
+    let configured = Duration::from_secs(interval_secs.max(1));
+    let deadline = started_at + configured;
+    let earliest = now + MIN_POLL_GAP;
+    deadline.max(earliest)
+}
 
 /// \u{81ea}\u{52a8}\u{56de}\u{590d}\u{670d}\u{52a1}
 pub struct AutoReplyService {
@@ -29,15 +40,22 @@ impl AutoReplyService {
 
     pub async fn start(&self) {
         log::info!("\u{81ea}\u{52a8}\u{56de}\u{590d}\u{670d}\u{52a1}\u{542f}\u{52a8}");
+        let mut next_poll = Instant::now();
 
         loop {
+            tokio::time::sleep_until(next_poll).await;
+            let poll_started_at = Instant::now();
             let state = get_global_state();
             let settings = state.get_settings().await;
 
             let replies_enabled = settings.enabled && settings.channels.any_enabled();
             let likes_enabled = settings.channels.comment.like_comments;
             if !replies_enabled && !likes_enabled {
-                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                next_poll = schedule_next_poll(
+                    poll_started_at,
+                    DISABLED_POLL_INTERVAL_SECS,
+                    Instant::now(),
+                );
                 continue;
             }
 
@@ -45,11 +63,8 @@ impl AutoReplyService {
                 Some(acc) => acc,
                 None => {
                     log::warn!("\u{6ca1}\u{6709}\u{6fc0}\u{6d3b}\u{7684}\u{8d26}\u{53f7}");
-                    let interval = {
-                        let s = state.get_settings().await;
-                        s.interval
-                    };
-                    tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
+                    next_poll =
+                        schedule_next_poll(poll_started_at, settings.interval, Instant::now());
                     continue;
                 }
             };
@@ -64,11 +79,7 @@ impl AutoReplyService {
 
             if !has_sessdata || !has_bili_jct {
                 log::error!("cookie \u{4e0d}\u{5b8c}\u{6574}\u{ff08}\u{7f3a}\u{5c11} SESSDATA \u{6216} bili_jct\u{ff09}\u{ff0c}\u{8bf7}\u{5220}\u{9664}\u{8d26}\u{53f7}\u{91cd}\u{65b0}\u{626b}\u{7801}\u{767b}\u{5f55}");
-                let interval = {
-                    let s = state.get_settings().await;
-                    s.interval
-                };
-                tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
+                next_poll = schedule_next_poll(poll_started_at, settings.interval, Instant::now());
                 continue;
             }
 
@@ -136,11 +147,8 @@ impl AutoReplyService {
                 }
             }
 
-            let interval = {
-                let s = state.get_settings().await;
-                s.interval
-            };
-            tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
+            let interval = state.get_settings().await.interval;
+            next_poll = schedule_next_poll(poll_started_at, interval, Instant::now());
         }
     }
 
@@ -268,4 +276,34 @@ pub async fn merge_liked_set(entries: Vec<String>) -> Result<(), String> {
     let state = get_global_state();
     state.merge_liked_set(entries).await;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn poll_interval_is_measured_from_cycle_start() {
+        let base = Instant::now();
+        let next = schedule_next_poll(base, 5, base);
+
+        assert_eq!(next, base + Duration::from_secs(5));
+    }
+
+    #[test]
+    fn slow_cycles_wait_only_for_the_minimum_gap() {
+        let started = Instant::now();
+        let now = started + Duration::from_secs(10);
+        let next = schedule_next_poll(started, 5, now);
+
+        assert_eq!(next, now + MIN_POLL_GAP);
+    }
+
+    #[test]
+    fn zero_interval_is_clamped_to_one_second() {
+        let base = Instant::now();
+        let next = schedule_next_poll(base, 0, base);
+
+        assert_eq!(next, base + Duration::from_secs(1));
+    }
 }

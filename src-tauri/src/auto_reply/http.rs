@@ -1,11 +1,20 @@
 use reqwest::Client;
+use std::sync::OnceLock;
+
+static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
 
 /// 获取配置好的HTTP客户端
 pub fn get_http_client() -> Client {
-    Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        .build()
-        .expect("Failed to create HTTP client")
+    HTTP_CLIENT
+        .get_or_init(|| {
+            Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(8))
+                .timeout(std::time::Duration::from_secs(20))
+                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .build()
+                .expect("Failed to create HTTP client")
+        })
+        .clone()
 }
 
 /// 从cookie中提取CSRF token (bili_jct)
