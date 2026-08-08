@@ -5,6 +5,7 @@ use super::state::AutoReplyState;
 use super::wbi;
 use crate::bilibili::UserInfo;
 use async_trait::async_trait;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
@@ -320,16 +321,220 @@ impl CommentHandler {
         Ok(dynamics)
     }
 
-    fn is_replied(reply: &serde_json::Value, my_mid: i64) -> bool {
-        if let Some(subs) = reply["replies"].as_array() {
-            if subs
-                .iter()
-                .any(|r| r["mid"].as_i64().unwrap_or(0) == my_mid)
-            {
-                return true;
+    fn reply_id(reply: &serde_json::Value) -> u64 {
+        Self::value_as_u64(&reply["rpid"])
+            .or_else(|| Self::value_as_u64(&reply["rpid_str"]))
+            .unwrap_or(0)
+    }
+
+    fn reply_mid(reply: &serde_json::Value) -> u64 {
+        Self::value_as_u64(&reply["mid"])
+            .or_else(|| Self::value_as_u64(&reply["member"]["mid"]))
+            .unwrap_or(0)
+    }
+
+    fn reply_parent(reply: &serde_json::Value) -> u64 {
+        Self::value_as_u64(&reply["parent"])
+            .or_else(|| Self::value_as_u64(&reply["parent_str"]))
+            .unwrap_or(0)
+    }
+
+    fn reply_dialog(reply: &serde_json::Value) -> u64 {
+        Self::value_as_u64(&reply["dialog"])
+            .or_else(|| Self::value_as_u64(&reply["dialog_str"]))
+            .unwrap_or(0)
+    }
+
+    fn embedded_sub_comments(reply: &serde_json::Value) -> Vec<serde_json::Value> {
+        reply["replies"]
+            .as_array()
+            .map(|replies| replies.to_vec())
+            .unwrap_or_default()
+    }
+
+    fn message_from_reply(
+        target: &CommentTarget,
+        reply: &serde_json::Value,
+        root_rpid: u64,
+        parent_rpid: u64,
+        my_mid: u64,
+        already_replied: bool,
+    ) -> Option<Message> {
+        let rpid = Self::reply_id(reply);
+        let mid = Self::reply_mid(reply);
+        if rpid == 0 || mid == 0 || mid == my_mid {
+            return None;
+        }
+
+        let nickname = reply["member"]["uname"].as_str().unwrap_or("").to_string();
+        let comment_text = reply["content"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+
+        Some(Message {
+            id: format!("{}:{}", target.oid, rpid),
+            user_id: mid.to_string(),
+            user_name: nickname,
+            content: if comment_text.is_empty() {
+                None
+            } else {
+                Some(comment_text)
+            },
+            extra_data: serde_json::json!({
+                "oid": target.oid,
+                "aid": target.oid,
+                "reply_type": target.reply_type,
+                "referer": target.referer,
+                "rpid": rpid,
+                "root_rpid": root_rpid,
+                "parent_rpid": parent_rpid,
+                "already_replied": already_replied,
+            }),
+        })
+    }
+
+    fn thread_messages(
+        target: &CommentTarget,
+        root: &serde_json::Value,
+        sub_comments: &[serde_json::Value],
+        my_mid: i64,
+    ) -> Vec<Message> {
+        let Some(my_mid) = u64::try_from(my_mid).ok() else {
+            return Vec::new();
+        };
+        let root_rpid = Self::reply_id(root);
+        if root_rpid == 0 {
+            return Vec::new();
+        }
+
+        let mut messages = Vec::new();
+        let root_replied = sub_comments
+            .iter()
+            .any(|reply| Self::reply_mid(reply) == my_mid);
+        if let Some(message) =
+            Self::message_from_reply(target, root, root_rpid, root_rpid, my_mid, root_replied)
+        {
+            messages.push(message);
+        }
+
+        for sub_comment in sub_comments {
+            let child_rpid = Self::reply_id(sub_comment);
+            if child_rpid == 0 {
+                continue;
+            }
+            let child_replied = sub_comments.iter().any(|candidate| {
+                Self::reply_mid(candidate) == my_mid
+                    && (Self::reply_parent(candidate) == child_rpid
+                        || Self::reply_dialog(candidate) == child_rpid)
+            });
+            if let Some(message) = Self::message_from_reply(
+                target,
+                sub_comment,
+                root_rpid,
+                child_rpid,
+                my_mid,
+                child_replied,
+            ) {
+                messages.push(message);
             }
         }
-        false
+
+        messages
+    }
+
+    async fn get_sub_comments(
+        &self,
+        account: &UserInfo,
+        target: &CommentTarget,
+        root: &serde_json::Value,
+    ) -> Result<Vec<serde_json::Value>, String> {
+        let embedded = Self::embedded_sub_comments(root);
+        let expected = Self::value_as_u64(&root["rcount"]).unwrap_or(embedded.len() as u64);
+        if expected <= embedded.len() as u64 {
+            return Ok(embedded);
+        }
+
+        let root_rpid = Self::reply_id(root);
+        if root_rpid == 0 {
+            return Ok(embedded);
+        }
+
+        let mut comments = Vec::new();
+        for pn in 1..=30u32 {
+            let oid_s = target.oid.to_string();
+            let reply_type_s = target.reply_type.to_string();
+            let root_s = root_rpid.to_string();
+            let pn_s = pn.to_string();
+            let params: &[(&str, &str)] = &[
+                ("type", reply_type_s.as_str()),
+                ("oid", oid_s.as_str()),
+                ("root", root_s.as_str()),
+                ("ps", "20"),
+                ("pn", pn_s.as_str()),
+            ];
+            let json = self
+                .fetch_json(
+                    "https://api.bilibili.com/x/v2/reply/reply",
+                    params,
+                    &account.cookie,
+                    &target.referer,
+                )
+                .await?;
+            if json["code"] != 0 {
+                return Err(format!(
+                    "子评论API code={}, msg={}",
+                    json["code"], json["message"]
+                ));
+            }
+
+            let page_comments = json["data"]["replies"]
+                .as_array()
+                .map(|replies| replies.to_vec())
+                .unwrap_or_default();
+            let page_count = page_comments.len();
+            if page_count == 0 {
+                break;
+            }
+            comments.extend(page_comments);
+            if comments.len() as u64 >= expected || page_count < 20 {
+                break;
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+        }
+
+        if comments.is_empty() {
+            return Ok(embedded);
+        }
+        let mut seen = HashSet::new();
+        comments.retain(|reply| {
+            let rpid = Self::reply_id(reply);
+            rpid != 0 && seen.insert(rpid)
+        });
+        Ok(comments)
+    }
+
+    async fn messages_for_thread(
+        &self,
+        account: &UserInfo,
+        target: &CommentTarget,
+        root: &serde_json::Value,
+        my_mid: i64,
+    ) -> Vec<Message> {
+        let embedded = Self::embedded_sub_comments(root);
+        let sub_comments = match self.get_sub_comments(account, target, root).await {
+            Ok(comments) => comments,
+            Err(error) => {
+                log::warn!(
+                    "获取 oid={} 根评论 rpid={} 的子评论失败，使用接口内嵌数据: {}",
+                    target.oid,
+                    Self::reply_id(root),
+                    error
+                );
+                embedded
+            }
+        };
+        Self::thread_messages(target, root, &sub_comments, my_mid)
     }
 
     async fn get_comments(
@@ -455,36 +660,29 @@ impl CommentHandler {
             }
 
             let mut filtered = 0u32;
+            let mut added = 0usize;
             for reply in &replies {
-                let rpid = reply["rpid"].as_u64().unwrap_or(0);
-                let mid = reply["mid"].as_i64().unwrap_or(0);
-                let nickname = reply["member"]["uname"].as_str().unwrap_or("").to_string();
-                if mid == my_mid || rpid == 0 {
-                    continue;
-                }
-                let already_replied = Self::is_replied(reply, my_mid);
-                if already_replied {
-                    filtered += 1;
-                }
-
-                let comment_text = reply["content"]["message"]
-                    .as_str()
-                    .unwrap_or("")
-                    .to_string();
-
-                messages.push(Message {
-                    id: format!("{}:{}", target.oid, rpid),
-                    user_id: mid.to_string(),
-                    user_name: nickname,
-                    content: if comment_text.is_empty() { None } else { Some(comment_text) },
-                    extra_data: serde_json::json!({ "oid": target.oid, "aid": target.oid, "reply_type": target.reply_type, "referer": target.referer, "rpid": rpid, "already_replied": already_replied }),
-                });
+                let thread_messages = self
+                    .messages_for_thread(account, target, reply, my_mid)
+                    .await;
+                let thread_filtered = thread_messages
+                    .iter()
+                    .filter(|message| {
+                        message.extra_data["already_replied"]
+                            .as_bool()
+                            .unwrap_or(false)
+                    })
+                    .count();
+                filtered += thread_filtered as u32;
+                added += thread_messages.len().saturating_sub(thread_filtered);
+                messages.extend(thread_messages);
             }
             log::info!(
-                "oid={} 第{}页: {}条通过过滤, {}条已回复",
+                "oid={} 第{}页: {}个评论线程, {}条待处理, {}条已回复",
                 target.oid,
                 page,
-                count.saturating_sub(filtered as usize),
+                count,
+                added,
                 filtered
             );
 
@@ -548,36 +746,29 @@ impl CommentHandler {
             }
 
             let mut filtered = 0u32;
+            let mut added = 0usize;
             for reply in &replies {
-                let rpid = reply["rpid"].as_u64().unwrap_or(0);
-                let mid = reply["mid"].as_i64().unwrap_or(0);
-                let nickname = reply["member"]["uname"].as_str().unwrap_or("").to_string();
-                if mid == my_mid || rpid == 0 {
-                    continue;
-                }
-                let already_replied = Self::is_replied(reply, my_mid);
-                if already_replied {
-                    filtered += 1;
-                }
-
-                let comment_text = reply["content"]["message"]
-                    .as_str()
-                    .unwrap_or("")
-                    .to_string();
-
-                messages.push(Message {
-                    id: format!("{}:{}", target.oid, rpid),
-                    user_id: mid.to_string(),
-                    user_name: nickname,
-                    content: if comment_text.is_empty() { None } else { Some(comment_text) },
-                    extra_data: serde_json::json!({ "oid": target.oid, "aid": target.oid, "reply_type": target.reply_type, "referer": target.referer, "rpid": rpid, "already_replied": already_replied }),
-                });
+                let thread_messages = self
+                    .messages_for_thread(account, target, reply, my_mid)
+                    .await;
+                let thread_filtered = thread_messages
+                    .iter()
+                    .filter(|message| {
+                        message.extra_data["already_replied"]
+                            .as_bool()
+                            .unwrap_or(false)
+                    })
+                    .count();
+                filtered += thread_filtered as u32;
+                added += thread_messages.len().saturating_sub(thread_filtered);
+                messages.extend(thread_messages);
             }
-            if filtered > 0 {
+            if filtered > 0 || added > 0 {
                 log::debug!(
-                    "oid={} pn第{}页: 过滤{}条已回复评论",
+                    "oid={} pn第{}页: {}条待处理, {}条已回复",
                     target.oid,
                     pn,
+                    added,
                     filtered
                 );
             }
@@ -598,7 +789,8 @@ impl CommentHandler {
         oid: u64,
         reply_type: u32,
         referer: &str,
-        rpid: u64,
+        root_rpid: u64,
+        parent_rpid: u64,
         message: &str,
     ) -> Result<(), String> {
         let csrf = extract_csrf(&account.cookie);
@@ -608,7 +800,8 @@ impl CommentHandler {
 
         let reply_type_s = reply_type.to_string();
         let oid_s = oid.to_string();
-        let rpid_s = rpid.to_string();
+        let root_s = root_rpid.to_string();
+        let parent_s = parent_rpid.to_string();
         let csrf_s = csrf.clone();
         let resp = get_http_client()
             .post("https://api.bilibili.com/x/v2/reply/add")
@@ -622,8 +815,8 @@ impl CommentHandler {
                 ("type", reply_type_s.as_str()),
                 ("oid", oid_s.as_str()),
                 ("message", message),
-                ("root", rpid_s.as_str()),
-                ("parent", rpid_s.as_str()),
+                ("root", root_s.as_str()),
+                ("parent", parent_s.as_str()),
                 ("plat", "1"),
                 ("csrf", csrf_s.as_str()),
                 ("csrf_token", csrf_s.as_str()),
@@ -844,8 +1037,18 @@ impl MessageHandler for CommentHandler {
             }
         });
         let rpid = message.extra_data["rpid"].as_u64().ok_or("缺少rpid")?;
-        self.reply_to_comment(account, oid, reply_type, referer, rpid, reply_msg)
-            .await
+        let root_rpid = message.extra_data["root_rpid"].as_u64().unwrap_or(rpid);
+        let parent_rpid = message.extra_data["parent_rpid"].as_u64().unwrap_or(rpid);
+        self.reply_to_comment(
+            account,
+            oid,
+            reply_type,
+            referer,
+            root_rpid,
+            parent_rpid,
+            reply_msg,
+        )
+        .await
     }
 
     async fn on_reply_success(
@@ -877,5 +1080,87 @@ impl MessageHandler for CommentHandler {
         let rpid = message.extra_data["rpid"].as_u64().ok_or("缺少rpid")?;
         self.like_comment(account, oid, reply_type, referer, rpid)
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn video_target() -> CommentTarget {
+        CommentTarget {
+            oid: 42,
+            reply_type: 1,
+            referer: "https://www.bilibili.com/video/av42".to_string(),
+            label: "视频",
+        }
+    }
+
+    #[test]
+    fn builds_messages_for_root_and_sub_comments_with_correct_reply_targets() {
+        let root = serde_json::json!({
+            "rpid": 100,
+            "mid": 2,
+            "member": { "uname": "一级用户" },
+            "content": { "message": "一级评论" }
+        });
+        let sub_comments = vec![
+            serde_json::json!({
+                "rpid": 101,
+                "root": 100,
+                "parent": 100,
+                "mid": 3,
+                "member": { "uname": "子评论用户" },
+                "content": { "message": "子评论" }
+            }),
+            serde_json::json!({
+                "rpid": 102,
+                "root": 100,
+                "parent": 101,
+                "dialog": 101,
+                "mid": 1,
+                "member": { "uname": "UP主" },
+                "content": { "message": "已经回复子评论" }
+            }),
+            serde_json::json!({
+                "rpid": 103,
+                "root": 100,
+                "parent": 100,
+                "mid": 4,
+                "member": { "uname": "另一用户" },
+                "content": { "message": "另一条子评论" }
+            }),
+        ];
+
+        let messages = CommentHandler::thread_messages(&video_target(), &root, &sub_comments, 1);
+
+        assert_eq!(3, messages.len());
+        assert!(messages.iter().all(|message| message.user_id != "1"));
+
+        let root_message = messages
+            .iter()
+            .find(|message| message.extra_data["rpid"] == 100)
+            .unwrap();
+        assert!(root_message.extra_data["already_replied"]
+            .as_bool()
+            .unwrap());
+        assert_eq!(100, root_message.extra_data["root_rpid"]);
+        assert_eq!(100, root_message.extra_data["parent_rpid"]);
+
+        let replied_child = messages
+            .iter()
+            .find(|message| message.extra_data["rpid"] == 101)
+            .unwrap();
+        assert!(replied_child.extra_data["already_replied"]
+            .as_bool()
+            .unwrap());
+        assert_eq!(100, replied_child.extra_data["root_rpid"]);
+        assert_eq!(101, replied_child.extra_data["parent_rpid"]);
+
+        let new_child = messages
+            .iter()
+            .find(|message| message.extra_data["rpid"] == 103)
+            .unwrap();
+        assert!(!new_child.extra_data["already_replied"].as_bool().unwrap());
     }
 }
