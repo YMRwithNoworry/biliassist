@@ -1,4 +1,4 @@
-use super::models::{MsgSource, ReplyPolicy};
+use super::models::{ChannelReplySettings, MsgSource, ReplyPolicy};
 use super::state::AutoReplyState;
 use crate::bilibili::UserInfo;
 use async_trait::async_trait;
@@ -61,7 +61,10 @@ pub trait MessageHandler: Send + Sync {
         let Some(comment_settings) = settings.comment_settings(source) else {
             return;
         };
-        if !comment_settings.like_comments {
+        let should_like = message.extra_data["custom_like_comments"]
+            .as_bool()
+            .unwrap_or(comment_settings.like_comments);
+        if !should_like {
             return;
         }
 
@@ -96,13 +99,14 @@ pub trait MessageHandler: Send + Sync {
     ) -> Result<HandleResult, String> {
         let settings = state.get_settings().await;
         let source = self.source_type();
-        let channel = settings.channel(source).clone();
+        let default_channel = settings.channel(source).clone();
         let messages = self.fetch_messages(account).await?;
 
         let mut result = HandleResult::default();
         let message_count = messages.len();
 
         for (index, message) in messages.into_iter().enumerate() {
+            let channel = effective_channel(&default_channel, &message.extra_data);
             let event_key = format!("event:{}:{}:{}", account.uid, source.id(), message.id);
             let user_key = format!("user:{}:{}:{}", account.uid, source.id(), message.user_id);
 
@@ -209,14 +213,6 @@ pub trait MessageHandler: Send + Sync {
         account: &UserInfo,
         state: &AutoReplyState,
     ) -> Result<HandleResult, String> {
-        let settings = state.get_settings().await;
-        let Some(comment_settings) = settings.comment_settings(self.source_type()) else {
-            return Ok(HandleResult::default());
-        };
-        if !comment_settings.like_comments {
-            return Ok(HandleResult::default());
-        }
-
         let messages = self.fetch_messages(account).await?;
         let mut result = HandleResult::default();
         let message_count = messages.len();
@@ -234,6 +230,23 @@ pub trait MessageHandler: Send + Sync {
 
         Ok(result)
     }
+}
+
+fn effective_channel(
+    default_channel: &ChannelReplySettings,
+    extra_data: &serde_json::Value,
+) -> ChannelReplySettings {
+    let mut channel = default_channel.clone();
+    if let Some(message) = extra_data["custom_message"].as_str() {
+        channel.message = message.to_string();
+    }
+    if let Some(policy) = extra_data["custom_reply_policy"].as_str() {
+        channel.reply_policy = match policy {
+            "oncePerUser" => ReplyPolicy::OncePerUser,
+            _ => ReplyPolicy::PerMessage,
+        };
+    }
+    channel
 }
 
 /// \u{683c}\u{5f0f}\u{5316}\u{6d88}\u{606f}
@@ -436,6 +449,18 @@ mod tests {
             content: Some("hello".to_string()),
             extra_data: serde_json::Value::Null,
         }
+    }
+
+    #[test]
+    fn custom_channel_overrides_message_and_policy() {
+        let default_channel = ChannelReplySettings::default();
+        let extra_data = serde_json::json!({
+            "custom_message": "指定视频回复",
+            "custom_reply_policy": "oncePerUser"
+        });
+        let channel = effective_channel(&default_channel, &extra_data);
+        assert_eq!("指定视频回复", channel.message);
+        assert_eq!(ReplyPolicy::OncePerUser, channel.reply_policy);
     }
 
     #[tokio::test]

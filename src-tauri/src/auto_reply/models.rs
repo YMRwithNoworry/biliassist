@@ -107,6 +107,39 @@ impl Default for CommentReplySettings {
     }
 }
 
+/// 用户指定的视频及其独立回复配置。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackedVideoSettings {
+    #[serde(default)]
+    pub bvid: String,
+    #[serde(flatten)]
+    pub reply: ChannelReplySettings,
+    #[serde(default = "default_true")]
+    pub like_comments: bool,
+}
+
+impl Default for TrackedVideoSettings {
+    fn default() -> Self {
+        Self {
+            bvid: String::new(),
+            reply: ChannelReplySettings::default(),
+            like_comments: true,
+        }
+    }
+}
+
+impl TrackedVideoSettings {
+    pub fn normalized_bvid(&self) -> Option<String> {
+        let bvid = self.bvid.trim();
+        let prefix = bvid.get(..2)?;
+        if !prefix.eq_ignore_ascii_case("bv") || bvid.len() < 3 {
+            return None;
+        }
+        Some(format!("BV{}", &bvid[2..]))
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutoReplyChannels {
@@ -189,6 +222,7 @@ pub struct AutoReplySettings {
     pub enabled: bool,
     pub interval: u64,
     pub channels: AutoReplyChannels,
+    pub tracked_videos: Vec<TrackedVideoSettings>,
     pub history: Vec<ReplyHistory>,
 }
 
@@ -198,12 +232,17 @@ impl Default for AutoReplySettings {
             enabled: true,
             interval: default_interval(),
             channels: AutoReplyChannels::default(),
+            tracked_videos: Vec::new(),
             history: Vec::new(),
         }
     }
 }
 
 impl AutoReplySettings {
+    pub fn any_enabled(&self) -> bool {
+        self.channels.any_enabled() || self.has_enabled_tracked_videos()
+    }
+
     pub fn channel(&self, source: MsgSource) -> &ChannelReplySettings {
         match source {
             MsgSource::Comment => &self.channels.comment.reply,
@@ -216,8 +255,28 @@ impl AutoReplySettings {
     pub fn enabled_sources(&self) -> Vec<MsgSource> {
         MsgSource::ALL
             .into_iter()
-            .filter(|source| self.channel(*source).enabled)
+            .filter(|source| {
+                self.channel(*source).enabled
+                    || (*source == MsgSource::Comment && self.has_enabled_tracked_videos())
+            })
             .collect()
+    }
+
+    pub fn has_enabled_tracked_videos(&self) -> bool {
+        self.tracked_videos
+            .iter()
+            .any(|video| video.reply.enabled && video.normalized_bvid().is_some())
+    }
+
+    pub fn likes_enabled_for_source(&self, source: MsgSource) -> bool {
+        self.comment_settings(source)
+            .map(|channel| channel.like_comments)
+            .unwrap_or(false)
+            || (source == MsgSource::Comment
+                && self
+                    .tracked_videos
+                    .iter()
+                    .any(|video| video.reply.enabled && video.like_comments))
     }
 
     pub fn comment_settings(&self, source: MsgSource) -> Option<&CommentReplySettings> {
@@ -238,6 +297,8 @@ struct AutoReplySettingsWire {
     interval: Option<u64>,
     #[serde(default)]
     channels: Option<AutoReplyChannels>,
+    #[serde(default)]
+    tracked_videos: Option<Vec<TrackedVideoSettings>>,
     #[serde(default)]
     history: Vec<ReplyHistory>,
 
@@ -264,6 +325,7 @@ impl<'de> Deserialize<'de> for AutoReplySettings {
                 enabled: wire.enabled.unwrap_or(true),
                 interval: wire.interval.unwrap_or_else(default_interval),
                 channels,
+                tracked_videos: wire.tracked_videos.unwrap_or_default(),
                 history: wire.history,
             });
         }
@@ -301,6 +363,7 @@ impl<'de> Deserialize<'de> for AutoReplySettings {
                 direct_message: channel(MsgSource::DirectMessage, legacy_policy),
                 follow: channel(MsgSource::Follow, legacy_policy),
             },
+            tracked_videos: Vec::new(),
             history: wire.history,
         })
     }
@@ -416,5 +479,53 @@ mod tests {
             settings.channels.dynamic.reply.reply_policy
         );
         assert!(!settings.channels.dynamic.like_comments);
+        assert!(settings.tracked_videos.is_empty());
+    }
+
+    #[test]
+    fn round_trips_tracked_video_settings_and_enables_comment_source() {
+        let stored = serde_json::json!({
+            "enabled": true,
+            "channels": {
+                "comment": {
+                    "enabled": false,
+                    "message": "默认回复",
+                    "likeComments": false
+                }
+            },
+            "trackedVideos": [{
+                "bvid": " bv1Test ",
+                "enabled": true,
+                "message": "指定视频回复 {用户名}",
+                "replyPolicy": "oncePerUser",
+                "likeComments": false
+            }]
+        });
+
+        let settings: AutoReplySettings = serde_json::from_value(stored).unwrap();
+        assert_eq!(
+            Some("BV1Test".to_string()),
+            settings.tracked_videos[0].normalized_bvid()
+        );
+        assert!(settings.has_enabled_tracked_videos());
+        assert!(settings.enabled_sources().contains(&MsgSource::Comment));
+        assert!(!settings.likes_enabled_for_source(MsgSource::Comment));
+
+        let canonical = serde_json::to_value(&settings).unwrap();
+        assert_eq!(" bv1Test ", canonical["trackedVideos"][0]["bvid"]);
+        assert_eq!(
+            "指定视频回复 {用户名}",
+            canonical["trackedVideos"][0]["message"]
+        );
+        assert_eq!("oncePerUser", canonical["trackedVideos"][0]["replyPolicy"]);
+    }
+
+    #[test]
+    fn invalid_tracked_video_bvid_is_ignored() {
+        let settings = TrackedVideoSettings {
+            bvid: "不是BV号".to_string(),
+            ..TrackedVideoSettings::default()
+        };
+        assert!(settings.normalized_bvid().is_none());
     }
 }

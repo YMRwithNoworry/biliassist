@@ -50,7 +50,7 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <strong>自动回复总开关</strong>
-                  <span>关闭后暂停四个渠道的回复；视频和动态点赞仍按各自设置执行。</span>
+                  <span>关闭后暂停自动回复；视频、动态及指定视频点赞仍按各自设置执行。</span>
                 </div>
                 <label class="toggle">
                   <input v-model="settings.enabled" type="checkbox" @change="save" />
@@ -109,8 +109,8 @@
                 @click="activeChannel = tab.key"
               >
                 <span>{{ tab.label }}</span>
-                <small :class="{ enabled: settings.channels[tab.key].enabled }">
-                  {{ settings.channels[tab.key].enabled ? '已开启' : '已关闭' }}
+                <small :class="{ enabled: isChannelEnabled(tab.key) }">
+                  {{ isChannelEnabled(tab.key) ? '已开启' : '已关闭' }}
                 </small>
               </button>
             </div>
@@ -176,6 +176,106 @@
                   <span class="field-hint">支持 {用户名}、{时间}</span>
                 </div>
               </div>
+
+              <section v-if="activeChannel === 'comment'" class="tracked-videos-section">
+                <div class="tracked-videos-heading">
+                  <div>
+                    <h4>指定视频</h4>
+                    <p>填写 BV 号后，额外处理该视频评论；每个视频可使用独立回复内容。</p>
+                  </div>
+                  <button class="button secondary" type="button" @click="addTrackedVideo">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 5v14M5 12h14" />
+                    </svg>
+                    添加视频
+                  </button>
+                </div>
+
+                <div v-if="settings.trackedVideos.length === 0" class="tracked-videos-empty">
+                  尚未添加指定视频
+                </div>
+
+                <div v-else class="tracked-videos-list">
+                  <div
+                    v-for="(video, index) in settings.trackedVideos"
+                    :key="`tracked-video-${index}`"
+                    class="tracked-video-item"
+                  >
+                    <div class="tracked-video-header">
+                      <div class="tracked-video-index">视频 {{ index + 1 }}</div>
+                      <label class="toggle" :aria-label="`启用视频 ${index + 1}`">
+                        <input v-model="video.enabled" type="checkbox" @change="save" />
+                        <span class="toggle-track"></span>
+                      </label>
+                      <button
+                        class="icon-button tracked-video-remove"
+                        type="button"
+                        :aria-label="`删除视频 ${index + 1}`"
+                        title="删除指定视频"
+                        @click="removeTrackedVideo(index)"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M6 6l12 12M18 6 6 18" />
+                        </svg>
+                      </button>
+                    </div>
+
+                    <div class="tracked-video-grid">
+                      <div class="form-field">
+                        <label :for="`tracked-video-bvid-${index}`">BV 号</label>
+                        <input
+                          :id="`tracked-video-bvid-${index}`"
+                          v-model.trim="video.bvid"
+                          type="text"
+                          placeholder="例如 BV1xx411c7mD"
+                          autocomplete="off"
+                          @blur="save"
+                        />
+                        <span class="field-hint">支持大小写 BV 前缀</span>
+                      </div>
+
+                      <div class="form-field">
+                        <label>回复策略</label>
+                        <div class="segmented-control" role="group" :aria-label="`指定视频 ${index + 1} 回复策略`">
+                          <button
+                            type="button"
+                            :class="{ active: video.replyPolicy === 'perMessage' }"
+                            @click="setTrackedReplyPolicy(video, 'perMessage')"
+                          >每条消息</button>
+                          <button
+                            type="button"
+                            :class="{ active: video.replyPolicy === 'oncePerUser' }"
+                            @click="setTrackedReplyPolicy(video, 'oncePerUser')"
+                          >每个用户一次</button>
+                        </div>
+                      </div>
+
+                      <div class="form-field full-width">
+                        <label :for="`tracked-video-message-${index}`">独立回复内容</label>
+                        <textarea
+                          :id="`tracked-video-message-${index}`"
+                          v-model="video.message"
+                          rows="3"
+                          placeholder="输入该视频的自动回复内容"
+                          @blur="save"
+                        ></textarea>
+                        <span class="field-hint">支持 {用户名}、{时间}</span>
+                      </div>
+
+                      <div class="setting-row tracked-video-like-row">
+                        <div class="setting-copy">
+                          <strong>自动点赞该视频评论</strong>
+                          <span>与回复开关和全局视频评论设置相互独立。</span>
+                        </div>
+                        <label class="toggle">
+                          <input v-model="video.likeComments" type="checkbox" @change="save" />
+                          <span class="toggle-track"></span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
 
               <div class="channel-actions">
                 <button class="button secondary" type="button" :disabled="previewRunning" @click="testReply">
@@ -255,6 +355,14 @@ const createChannel = (replyPolicy) => ({
   replyPolicy,
 })
 
+const createTrackedVideo = () => ({
+  bvid: '',
+  enabled: true,
+  message: DEFAULT_MESSAGE,
+  replyPolicy: 'perMessage',
+  likeComments: true,
+})
+
 const createSettings = () => ({
   enabled: true,
   interval: 60,
@@ -270,6 +378,7 @@ const createSettings = () => ({
     directMessage: createChannel('oncePerUser'),
     follow: createChannel('oncePerUser'),
   },
+  trackedVideos: [],
   history: [],
 })
 
@@ -300,6 +409,10 @@ const activeChannelMeta = computed(
 )
 const currentChannel = computed(() => settings.channels[activeChannel.value])
 const isCommentChannel = computed(() => ['comment', 'dynamic'].includes(activeChannel.value))
+const isChannelEnabled = (key) =>
+  settings.channels[key].enabled ||
+  (key === 'comment' &&
+    settings.trackedVideos.some((video) => video.enabled && /^bv.{1,}$/i.test(video.bvid.trim())))
 const channelHistory = computed(() =>
   settings.history.filter((item) => item.source === activeChannel.value),
 )
@@ -371,6 +484,13 @@ const normalizeSettings = (raw = {}) => {
       directMessage,
       follow,
     },
+    trackedVideos: Array.isArray(raw.trackedVideos)
+      ? raw.trackedVideos.map((item) => ({
+          ...createTrackedVideo(),
+          ...item,
+          bvid: item?.bvid || '',
+        }))
+      : [],
     history: Array.isArray(raw.history) ? raw.history : [],
   }
 }
@@ -436,6 +556,21 @@ const saveInterval = () => {
 
 const setReplyPolicy = (policy) => {
   currentChannel.value.replyPolicy = policy
+  save()
+}
+
+const setTrackedReplyPolicy = (video, policy) => {
+  video.replyPolicy = policy
+  save()
+}
+
+const addTrackedVideo = () => {
+  settings.trackedVideos.push(createTrackedVideo())
+  save()
+}
+
+const removeTrackedVideo = (index) => {
+  settings.trackedVideos.splice(index, 1)
   save()
 }
 
@@ -995,6 +1130,96 @@ onMounted(load)
   margin-top: 20px;
 }
 
+.tracked-videos-section {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid #30363D;
+}
+
+.tracked-videos-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 16px;
+}
+
+.tracked-videos-heading h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.tracked-videos-heading p {
+  margin: 5px 0 0;
+  color: #8B949E;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.tracked-videos-empty {
+  padding: 18px;
+  border: 1px dashed #484F58;
+  color: #8B949E;
+  font-size: 13px;
+  text-align: center;
+}
+
+.tracked-videos-list {
+  display: grid;
+  gap: 18px;
+}
+
+.tracked-video-item {
+  padding-top: 18px;
+  border-top: 1px solid #30363D;
+}
+
+.tracked-video-item:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.tracked-video-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.tracked-video-index {
+  flex: 1;
+  color: #C9D1D9;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tracked-video-remove {
+  width: 32px;
+  height: 32px;
+  color: #8B949E;
+}
+
+.tracked-video-remove:hover {
+  border-color: #F85149;
+  color: #F85149;
+}
+
+.tracked-video-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.55fr);
+  gap: 16px;
+}
+
+.tracked-video-like-row {
+  grid-column: 1 / -1;
+  min-height: 54px;
+  padding: 12px 14px;
+  border: 1px solid #30363D;
+  border-radius: 8px;
+  background: #21262D;
+}
+
 .channel-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1139,6 +1364,10 @@ onMounted(load)
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .tracked-video-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .wide-field,
   .full-width {
     grid-column: auto;
@@ -1208,6 +1437,15 @@ onMounted(load)
     align-items: flex-start;
     flex-direction: column;
     gap: 4px;
+  }
+
+  .tracked-videos-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .tracked-videos-heading .button {
+    align-self: flex-start;
   }
 }
 </style>

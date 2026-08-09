@@ -1,7 +1,7 @@
 use super::handler::{Message, MessageHandler};
 use super::http::{extract_csrf, get_http_client, resp_to_json};
-use super::models::MsgSource;
-use super::state::AutoReplyState;
+use super::models::{ChannelReplySettings, MsgSource};
+use super::state::{get_global_state, AutoReplyState};
 use super::wbi;
 use crate::bilibili::UserInfo;
 use async_trait::async_trait;
@@ -28,6 +28,8 @@ struct CommentTarget {
     reply_type: u32,
     referer: String,
     label: &'static str,
+    custom_reply: Option<ChannelReplySettings>,
+    custom_like_comments: Option<bool>,
 }
 
 pub struct CommentHandler {
@@ -83,6 +85,33 @@ impl CommentHandler {
             }
         }
         self.get_videos_fallback(account).await
+    }
+
+    async fn get_video_aid_by_bvid(&self, account: &UserInfo, bvid: &str) -> Result<u64, String> {
+        let referer = format!("https://www.bilibili.com/video/{bvid}");
+        let json = self
+            .fetch_json(
+                "https://api.bilibili.com/x/web-interface/view",
+                &[("bvid", bvid)],
+                &account.cookie,
+                &referer,
+            )
+            .await?;
+        if json["code"] != 0 {
+            return Err(format!(
+                "获取视频 {} 信息失败: {}",
+                bvid,
+                json["message"].as_str().unwrap_or("未知错误")
+            ));
+        }
+        json["data"]["aid"]
+            .as_u64()
+            .or_else(|| {
+                json["data"]["aid"]
+                    .as_str()
+                    .and_then(|value| value.parse().ok())
+            })
+            .ok_or_else(|| format!("视频 {} 缺少 aid", bvid))
     }
 
     async fn get_videos_wbi(&self, account: &UserInfo, keys: &WbiKeys) -> Result<Vec<u64>, String> {
@@ -390,6 +419,12 @@ impl CommentHandler {
                 "root_rpid": root_rpid,
                 "parent_rpid": parent_rpid,
                 "already_replied": already_replied,
+                "custom_message": target.custom_reply.as_ref().map(|channel| channel.message.clone()),
+                "custom_reply_policy": target.custom_reply.as_ref().map(|channel| match channel.reply_policy {
+                    super::models::ReplyPolicy::OncePerUser => "oncePerUser",
+                    super::models::ReplyPolicy::PerMessage => "perMessage",
+                }),
+                "custom_like_comments": target.custom_like_comments,
             }),
         })
     }
@@ -952,18 +987,60 @@ impl MessageHandler for CommentHandler {
 
     async fn fetch_messages(&self, account: &UserInfo) -> Result<Vec<Message>, String> {
         let targets: Vec<CommentTarget> = match self.kind {
-            CommentKind::Video => self
-                .get_videos(account)
-                .await?
-                .into_iter()
-                .take(10)
-                .map(|aid| CommentTarget {
-                    oid: aid,
-                    reply_type: 1,
-                    referer: format!("https://www.bilibili.com/video/av{}", aid),
-                    label: "视频",
-                })
-                .collect(),
+            CommentKind::Video => {
+                let settings = get_global_state().get_settings().await;
+                let mut targets = Vec::new();
+
+                if settings.channels.comment.reply.enabled {
+                    match self.get_videos(account).await {
+                        Ok(aids) => {
+                            for aid in aids.into_iter().take(10) {
+                                targets.push(CommentTarget {
+                                    oid: aid,
+                                    reply_type: 1,
+                                    referer: format!("https://www.bilibili.com/video/av{aid}"),
+                                    label: "视频",
+                                    custom_reply: None,
+                                    custom_like_comments: None,
+                                });
+                            }
+                        }
+                        Err(error) => {
+                            log::warn!("获取自己的视频列表失败，继续处理指定视频: {}", error)
+                        }
+                    }
+                }
+
+                for tracked in settings.tracked_videos.iter() {
+                    if !tracked.reply.enabled {
+                        continue;
+                    }
+                    let Some(bvid) = tracked.normalized_bvid() else {
+                        log::warn!("忽略无效 BV 号: {}", tracked.bvid);
+                        continue;
+                    };
+                    match self.get_video_aid_by_bvid(account, &bvid).await {
+                        Ok(aid) => {
+                            let target = CommentTarget {
+                                oid: aid,
+                                reply_type: 1,
+                                referer: format!("https://www.bilibili.com/video/{bvid}"),
+                                label: "指定视频",
+                                custom_reply: Some(tracked.reply.clone()),
+                                custom_like_comments: Some(tracked.like_comments),
+                            };
+                            if let Some(existing) = targets.iter_mut().find(|item| item.oid == aid)
+                            {
+                                *existing = target;
+                            } else {
+                                targets.push(target);
+                            }
+                        }
+                        Err(error) => log::warn!("获取指定视频 {} 失败: {}", bvid, error),
+                    }
+                }
+                targets
+            }
             CommentKind::Dynamic => self
                 .get_dynamics(account)
                 .await?
@@ -974,6 +1051,8 @@ impl MessageHandler for CommentHandler {
                     reply_type: 11,
                     referer: format!("https://t.bilibili.com/{}", dynamic_id),
                     label: "动态",
+                    custom_reply: None,
+                    custom_like_comments: None,
                 })
                 .collect(),
         };
@@ -1058,9 +1137,13 @@ impl MessageHandler for CommentHandler {
         state: &AutoReplyState,
     ) -> Result<(), String> {
         let settings = state.get_settings().await;
-        let like_comments = settings
-            .comment_settings(self.source_type())
-            .map(|channel| channel.like_comments)
+        let like_comments = message.extra_data["custom_like_comments"]
+            .as_bool()
+            .or_else(|| {
+                settings
+                    .comment_settings(self.source_type())
+                    .map(|channel| channel.like_comments)
+            })
             .unwrap_or(false);
         if !like_comments {
             return Ok(());
@@ -1093,6 +1176,8 @@ mod tests {
             reply_type: 1,
             referer: "https://www.bilibili.com/video/av42".to_string(),
             label: "视频",
+            custom_reply: None,
+            custom_like_comments: None,
         }
     }
 
@@ -1162,5 +1247,31 @@ mod tests {
             .find(|message| message.extra_data["rpid"] == 103)
             .unwrap();
         assert!(!new_child.extra_data["already_replied"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn carries_tracked_video_overrides_to_messages() {
+        let target = CommentTarget {
+            custom_reply: Some(ChannelReplySettings {
+                message: "指定回复".to_string(),
+                reply_policy: super::super::models::ReplyPolicy::OncePerUser,
+                ..ChannelReplySettings::default()
+            }),
+            custom_like_comments: Some(false),
+            ..video_target()
+        };
+        let reply = serde_json::json!({
+            "rpid": 200,
+            "mid": 2,
+            "member": { "uname": "用户" },
+            "content": { "message": "评论" }
+        });
+        let message =
+            CommentHandler::message_from_reply(&target, &reply, 200, 200, 1, false).unwrap();
+        assert_eq!("指定回复", message.extra_data["custom_message"]);
+        assert_eq!("oncePerUser", message.extra_data["custom_reply_policy"]);
+        assert!(!message.extra_data["custom_like_comments"]
+            .as_bool()
+            .unwrap());
     }
 }

@@ -48,13 +48,10 @@ impl AutoReplyService {
             let state = get_global_state();
             let settings = state.get_settings().await;
 
-            let replies_enabled = settings.enabled && settings.channels.any_enabled();
-            let likes_enabled = MsgSource::COMMENT_SOURCES.iter().any(|source| {
-                settings
-                    .comment_settings(*source)
-                    .map(|channel| channel.like_comments)
-                    .unwrap_or(false)
-            });
+            let replies_enabled = settings.enabled && settings.any_enabled();
+            let likes_enabled = MsgSource::COMMENT_SOURCES
+                .iter()
+                .any(|source| settings.likes_enabled_for_source(*source));
             if !replies_enabled && !likes_enabled {
                 next_poll = schedule_next_poll(
                     poll_started_at,
@@ -124,10 +121,16 @@ impl AutoReplyService {
             }
 
             for source in MsgSource::COMMENT_SOURCES {
-                let Some(channel) = settings.comment_settings(source) else {
-                    continue;
-                };
-                if channel.like_comments && (!settings.enabled || !channel.reply.enabled) {
+                let reply_enabled = settings
+                    .comment_settings(source)
+                    .map(|channel| channel.reply.enabled)
+                    .unwrap_or(false);
+                if settings.likes_enabled_for_source(source)
+                    && (!settings.enabled || !reply_enabled)
+                    && !(settings.enabled
+                        && source == MsgSource::Comment
+                        && settings.has_enabled_tracked_videos())
+                {
                     if let Some(handler) = self.registry.get_handler(&source) {
                         match handler.handle_likes_only(&account, state).await {
                             Ok(result) => {
