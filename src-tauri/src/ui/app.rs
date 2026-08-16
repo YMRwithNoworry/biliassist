@@ -92,6 +92,7 @@ pub struct AppView {
     otp_sent: bool,
     active_channel: usize,
     busy: bool,
+    backend_generation: u64,
     notice: Option<(String, bool)>,
     qr_image: Option<Arc<Image>>,
     qr_status: String,
@@ -151,6 +152,7 @@ impl AppView {
             otp_sent: false,
             active_channel: 0,
             busy: false,
+            backend_generation: 0,
             notice: None,
             qr_image: None,
             qr_status: "点击生成二维码后使用哔哩哔哩客户端扫码".into(),
@@ -307,11 +309,15 @@ impl AppView {
     fn sign_out(&mut self, _: &mut Window, cx: &mut Context<Self>) {
         match auth::clear_session() {
             Ok(()) => {
+                self.backend_generation = self.backend_generation.wrapping_add(1);
+                self.busy = false;
                 self.auth = None;
                 self.licensed = platform::is_licensed();
                 self.page = Page::Auth;
                 self.otp_sent = false;
                 self.notice = None;
+                self.qr_image = None;
+                self.qr_status = "点击生成二维码后使用哔哩哔哩客户端扫码".into();
             }
             Err(error) => self.notice = Some((format!("退出登录失败：{error}"), true)),
         }
@@ -329,6 +335,7 @@ impl AppView {
         Fut: Future<Output = Result<T, String>> + Send + 'static,
         F: FnOnce(&mut Self, Result<T, String>, &mut Window, &mut Context<Self>) + 'static,
     {
+        let generation = self.backend_generation;
         self.busy = true;
         self.notice = None;
         cx.notify();
@@ -345,6 +352,9 @@ impl AppView {
                 .await
                 .unwrap_or_else(|_| Err("后台任务意外终止".into()));
             let _ = this.update_in(window, move |this, window, cx| {
+                if this.backend_generation != generation {
+                    return;
+                }
                 this.busy = false;
                 callback(this, result, window, cx);
                 cx.notify();
