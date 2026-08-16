@@ -152,7 +152,14 @@ jobs:
       - name: 安装 Windows 打包工具
         if: runner.os == 'Windows'
         shell: bash
-        run: choco install innosetup --no-progress --yes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          choco install innosetup --no-progress --yes
+          gh api -H "Accept: application/vnd.github.raw+json" \
+            "repos/jrsoftware/issrc/contents/Files/Languages/Unofficial/ChineseSimplified.isl?ref=cfdf48923178df4b4f040e038b423aa555a61ffc" \
+            > packaging/windows/ChineseSimplified.isl
 
       - name: 打包 Windows 安装版与绿色版
         if: runner.os == 'Windows'
