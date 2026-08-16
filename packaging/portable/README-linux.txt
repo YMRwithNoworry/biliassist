@@ -5,3 +5,5 @@ BiliAssist Linux 绿色版
   ./BiliAssist
 
 程序文件无需安装。账号和自动回复配置保存在当前 Linux 用户的数据目录中，升级绿色版时不会丢失。
+
+若系统没有托盘支持，请安装 GTK 3 和 AppIndicator 运行库后再启动程序。

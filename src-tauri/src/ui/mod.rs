@@ -2,6 +2,7 @@ mod app;
 mod auth;
 mod cloud;
 mod platform;
+mod tray;
 
 use crate::{auto_reply, runtime, storage};
 use app::{AppView, Bootstrap};
@@ -49,6 +50,11 @@ pub fn run() {
                     window.set_window_title("B站账号管理工具");
                     window.activate_window();
                 })?;
+
+                let main_window = window.into();
+                if let Err(error) = tray::install(main_window, cx) {
+                    log::error!("无法初始化系统托盘，关闭窗口将退出程序：{error}");
+                }
                 Ok::<_, anyhow::Error>(())
             })
             .detach();

@@ -1,5 +1,11 @@
 use auto_launch::AutoLaunchBuilder;
+use gpui::{App, Window};
 use std::path::PathBuf;
+
+#[cfg(target_os = "windows")]
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindowAsync, SW_HIDE, SW_SHOW};
 
 const APP_NAME: &str = "BilibiliAccountManager";
 const LICENSE_FILE: &str = "license_activated";
@@ -46,4 +52,66 @@ pub fn set_autostart(enabled: bool) -> Result<(), String> {
         launcher.disable()
     }
     .map_err(|error| error.to_string())
+}
+
+pub fn hide_main_window(window: &Window, cx: &App) {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = cx;
+        if set_windows_visibility(window, SW_HIDE) {
+            return;
+        }
+        window.minimize_window();
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let _ = window;
+        cx.hide();
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let _ = cx;
+        window.minimize_window();
+    }
+}
+
+pub fn show_main_window(window: &Window, cx: &App) {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = cx;
+        set_windows_visibility(window, SW_SHOW);
+        window.activate_window();
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        cx.activate(true);
+        window.activate_window();
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let _ = cx;
+        window.activate_window();
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn set_windows_visibility(
+    window: &Window,
+    command: windows_sys::Win32::UI::WindowsAndMessaging::SHOW_WINDOW_CMD,
+) -> bool {
+    let Ok(handle) = HasWindowHandle::window_handle(window) else {
+        return false;
+    };
+    let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+        return false;
+    };
+    let hwnd = handle.hwnd.get() as windows_sys::Win32::Foundation::HWND;
+    unsafe {
+        ShowWindowAsync(hwnd, command);
+    }
+    true
 }
