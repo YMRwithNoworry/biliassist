@@ -104,7 +104,10 @@ jobs:
             echo
             echo "## 下载说明"
             echo
-            echo "下载与系统对应的压缩包，解压后运行 BiliAssist。"
+            echo "- Windows 安装版：下载 \`windows-x86_64-setup.exe\` 并按向导安装。"
+            echo "- Windows 绿色版：下载 \`windows-x86_64-portable.zip\`，完整解压后运行 BiliAssist。"
+            echo "- macOS：下载对应架构的 \`.dmg\`，打开后将 BiliAssist 拖入 Applications。"
+            echo "- Linux 绿色版：下载 \`linux-*-portable.tar.gz\`，完整解压后运行 BiliAssist。"
           } > changelog.md
 
       - uses: actions/upload-artifact@v7
@@ -146,30 +149,77 @@ jobs:
         shell: bash
         run: cargo build --release --locked --manifest-path src-tauri/Cargo.toml
 
-      - name: 打包 Windows 程序
+      - name: 安装 Windows 打包工具
+        if: runner.os == 'Windows'
+        shell: bash
+        run: choco install innosetup --no-progress --yes
+
+      - name: 打包 Windows 安装版与绿色版
         if: runner.os == 'Windows'
         shell: bash
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          mkdir -p dist/package
-          cp src-tauri/target/release/bilibili-account-manager.exe dist/package/BiliAssist.exe
-          7z a "dist/biliassist-${VERSION}-windows-x86_64.zip" ./dist/package/BiliAssist.exe
+          PORTABLE_DIR="dist/BiliAssist"
+          mkdir -p "$PORTABLE_DIR"
+          cp src-tauri/target/release/bilibili-account-manager.exe "$PORTABLE_DIR/BiliAssist.exe"
+          cp LICENSE "$PORTABLE_DIR/LICENSE"
+          cp packaging/portable/README-windows.txt "$PORTABLE_DIR/README.txt"
 
-      - name: 打包 Unix 程序
-        if: runner.os != 'Windows'
+          pushd dist
+          7z a "biliassist-${VERSION}-windows-x86_64-portable.zip" BiliAssist
+          popd
+
+          "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" packaging/windows/BiliAssist.iss
+          test -f "dist/biliassist-${VERSION}-windows-x86_64-setup.exe"
+
+      - name: 打包 macOS 应用
+        if: runner.os == 'macOS'
         shell: bash
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          mkdir -p dist/package
-          cp src-tauri/target/release/bilibili-account-manager dist/package/BiliAssist
-          chmod +x dist/package/BiliAssist
-          OS_NAME=$(printf '%s' "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')
           ARCH=$(uname -m)
-          tar -C dist/package -czf "dist/biliassist-${VERSION}-${OS_NAME}-${ARCH}.tar.gz" BiliAssist
+          APP_DIR="dist/BiliAssist.app"
+          CONTENTS_DIR="$APP_DIR/Contents"
+          mkdir -p "$CONTENTS_DIR/MacOS" "$CONTENTS_DIR/Resources"
+          cp src-tauri/target/release/bilibili-account-manager "$CONTENTS_DIR/MacOS/BiliAssist"
+          chmod +x "$CONTENTS_DIR/MacOS/BiliAssist"
+          cp src-tauri/icons/icon.icns "$CONTENTS_DIR/Resources/AppIcon.icns"
+          sed "s/@VERSION@/${VERSION}/g" packaging/macos/Info.plist > "$CONTENTS_DIR/Info.plist"
+          codesign --force --deep --sign - "$APP_DIR"
+
+          ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" \
+            "dist/biliassist-${VERSION}-macos-${ARCH}-portable.zip"
+
+          DMG_DIR="dist/dmg"
+          mkdir -p "$DMG_DIR"
+          cp -R "$APP_DIR" "$DMG_DIR/BiliAssist.app"
+          cp LICENSE "$DMG_DIR/LICENSE"
+          cp packaging/portable/README-macos.txt "$DMG_DIR/README.txt"
+          ln -s /Applications "$DMG_DIR/Applications"
+          hdiutil create -volname "BiliAssist" -srcfolder "$DMG_DIR" -ov -format UDZO \
+            "dist/biliassist-${VERSION}-macos-${ARCH}.dmg"
+
+      - name: 打包 Linux 绿色版
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          ARCH=$(uname -m)
+          PORTABLE_NAME="BiliAssist-${VERSION}-linux-${ARCH}-portable"
+          PORTABLE_DIR="dist/${PORTABLE_NAME}"
+          mkdir -p "$PORTABLE_DIR"
+          cp src-tauri/target/release/bilibili-account-manager "$PORTABLE_DIR/BiliAssist"
+          chmod +x "$PORTABLE_DIR/BiliAssist"
+          cp LICENSE "$PORTABLE_DIR/LICENSE"
+          cp packaging/portable/README-linux.txt "$PORTABLE_DIR/README.txt"
+          tar -C dist -czf "dist/biliassist-${VERSION}-linux-${ARCH}-portable.tar.gz" \
+            "$PORTABLE_NAME"
 
       - uses: actions/upload-artifact@v7
         with:

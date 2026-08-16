@@ -1,5 +1,11 @@
 # 快速开始
 
+## 安装
+
+前往 [GitHub Releases](https://github.com/YMRwithNoworry/biliassist/releases) 下载发布包。Windows 可选择 `setup.exe` 安装版或 `portable.zip` 绿色版；macOS 使用 `.dmg`；Linux 使用 `portable.tar.gz`。
+
+绿色版必须完整解压后再运行，安装版按安装向导操作即可。
+
 ## 环境
 
 安装 Rust stable，并确认 rustc 和 cargo 命令可用。

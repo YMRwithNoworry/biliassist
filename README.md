@@ -21,6 +21,16 @@ BiliAssist 是使用 Rust、GPUI 和 [gpui-component](https://github.com/longbri
 - 本地存储：AES-256-GCM
 - 应用认证：Supabase Auth
 
+## 下载与安装
+
+在 [GitHub Releases](https://github.com/YMRwithNoworry/biliassist/releases) 下载对应系统的发布包：
+
+- Windows 推荐使用 `windows-x86_64-setup.exe` 安装版；免安装使用 `windows-x86_64-portable.zip` 绿色版
+- macOS 使用 `.dmg` 安装包，也可下载包含标准 `.app` 的便携版
+- Linux 使用 `linux-*-portable.tar.gz` 绿色版，完整解压后运行
+
+请完整解压绿色版，不要直接在压缩软件中运行程序。
+
 ## 开发
 
 需要安装 Rust stable。Linux 还需要 Fontconfig、Wayland/X11、Vulkan Loader 等 GPUI 系统依赖。
