@@ -1,6 +1,6 @@
 {
   "name": "bilibili-account-manager",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "基于 GPUI 的 B站账号管理和自动回复原生桌面应用",
   "private": true,
   "scripts": {
