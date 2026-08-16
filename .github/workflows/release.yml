@@ -5,25 +5,24 @@ on:
     branches:
       - main
       - master
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       version_bump:
-        description: '版本号迭代方式'
+        description: 版本号迭代方式
         required: true
-        default: 'patch'
+        default: patch
         type: choice
         options:
           - patch
           - minor
           - major
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   version:
@@ -31,7 +30,6 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag_name: ${{ steps.version.outputs.tag_name }}
-      release_name: ${{ steps.version.outputs.release_name }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -43,123 +41,76 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: 计算新版本号
+      - name: 计算并提交版本号
         id: version
+        shell: bash
         run: |
-          CURRENT_VERSION=$(node -p "require('./package.json').version")
-          echo "当前版本: $CURRENT_VERSION"
+          set -euo pipefail
+          CURRENT_VERSION=$(jq -r '.version' package.json)
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
 
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            NEW_VERSION=${GITHUB_REF#refs/tags/v}
-            echo "使用 tag 版本: $NEW_VERSION"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            BUMP_TYPE="${{ github.event.inputs.version_bump }}"
           else
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
-
-            if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-              BUMP_TYPE="${{ github.event.inputs.version_bump }}"
+            COMMIT_MSG=$(git log -1 --pretty=%B)
+            if grep -qE 'BREAKING CHANGE|^[a-z]+(\([^)]*\))?!:' <<< "$COMMIT_MSG"; then
+              BUMP_TYPE=major
+            elif grep -qE '^feat(\([^)]*\))?:' <<< "$COMMIT_MSG"; then
+              BUMP_TYPE=minor
             else
-              COMMIT_MSG=$(git log -1 --pretty=%B)
-              if echo "$COMMIT_MSG" | grep -qE "(BREAKING CHANGE|major:|\!:)"; then
-                BUMP_TYPE="major"
-              elif echo "$COMMIT_MSG" | grep -qE "(minor:)"; then
-                BUMP_TYPE="minor"
-              else
-                BUMP_TYPE="patch"
-              fi
+              BUMP_TYPE=patch
             fi
-
-            echo "迭代方式: $BUMP_TYPE"
-
-            case $BUMP_TYPE in
-              major)
-                MAJOR=$((MAJOR + 1))
-                MINOR=0
-                PATCH=0
-                ;;
-              minor)
-                MINOR=$((MINOR + 1))
-                PATCH=0
-                ;;
-              patch)
-                PATCH=$((PATCH + 1))
-                ;;
-            esac
-
-            VERSION_STEP=20
-            if [ "$PATCH" -ge "$VERSION_STEP" ]; then
-              PATCH=0
-              MINOR=$((MINOR + 1))
-            fi
-            if [ "$MINOR" -ge "$VERSION_STEP" ]; then
-              MAJOR=$((MAJOR + 1))
-              MINOR=0
-              PATCH=0
-            fi
-
-            NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
-            echo "新版本: $NEW_VERSION"
-
-            node -e "
-              const fs = require('fs');
-              const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
-              pkg.version = '${NEW_VERSION}';
-              fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
-            "
-
-            sed -i "s/^version = \"${CURRENT_VERSION}\"/version = \"${NEW_VERSION}\"/" src-tauri/Cargo.toml
-
-            node -e "
-              const fs = require('fs');
-              const conf = JSON.parse(fs.readFileSync('./src-tauri/tauri.conf.json', 'utf8'));
-              conf.version = '${NEW_VERSION}';
-              fs.writeFileSync('./src-tauri/tauri.conf.json', JSON.stringify(conf, null, 2) + '\n');
-            "
-
-            git add package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json
-            git commit -m "chore(release): bump version to ${NEW_VERSION} [skip ci]" || true
-            git push origin HEAD || true
-
-            git tag "v${NEW_VERSION}" || true
-            git push origin "v${NEW_VERSION}" || true
           fi
 
-          echo "version=${NEW_VERSION}" >> $GITHUB_OUTPUT
-          echo "tag_name=v${NEW_VERSION}" >> $GITHUB_OUTPUT
-          echo "release_name=B站账号管理工具 v${NEW_VERSION}" >> $GITHUB_OUTPUT
+          case "$BUMP_TYPE" in
+            major)
+              MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor)
+              MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch)
+              PATCH=$((PATCH + 1)) ;;
+          esac
 
-      - name: 生成变更日志文件
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          TEMP_JSON=$(mktemp)
+          jq --arg version "$NEW_VERSION" '.version = $version' package.json > "$TEMP_JSON"
+          mv "$TEMP_JSON" package.json
+          sed -i '/^name = "bilibili-account-manager"$/ { n; s/^version = ".*"$/version = "'"$NEW_VERSION"'"/; }' src-tauri/Cargo.lock
+          sed -i -E "0,/^version = \"[^\"]+\"/s//version = \"${NEW_VERSION}\"/" src-tauri/Cargo.toml
+
+          git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m "chore(release): 发布 v${NEW_VERSION} [skip ci]"
+          git push origin HEAD:${{ github.ref_name }}
+          git tag -a "v${NEW_VERSION}" -m "BiliAssist v${NEW_VERSION}"
+          git push origin "v${NEW_VERSION}"
+
+          echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag_name=v${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: 生成变更日志
+        shell: bash
         run: |
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          cat > /tmp/changelog.md << 'CHANGELOG_EOF'
-          ## 更新内容
+          set -euo pipefail
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
+          {
+            echo "## 更新内容"
+            echo
+            if [[ -n "$PREVIOUS_TAG" ]]; then
+              git log --pretty=format:'- %s (%h)' "${PREVIOUS_TAG}..HEAD"
+            else
+              git log --pretty=format:'- %s (%h)'
+            fi
+            echo
+            echo
+            echo "## 下载说明"
+            echo
+            echo "下载与系统对应的压缩包，解压后运行 BiliAssist。"
+          } > changelog.md
 
-          CHANGELOG_EOF
-          if [ -n "$PREVIOUS_TAG" ]; then
-            echo "**变更范围**: ${PREVIOUS_TAG} → ${{ steps.version.outputs.tag_name }}" >> /tmp/changelog.md
-            echo "" >> /tmp/changelog.md
-            git log --pretty=format:"- %s (%h)" ${PREVIOUS_TAG}..HEAD >> /tmp/changelog.md
-          else
-            echo "**初始发布**" >> /tmp/changelog.md
-            echo "" >> /tmp/changelog.md
-            git log --pretty=format:"- %s (%h)" >> /tmp/changelog.md
-          fi
-          echo "" >> /tmp/changelog.md
-          echo "---" >> /tmp/changelog.md
-          echo "" >> /tmp/changelog.md
-          echo "### 全平台安装包" >> /tmp/changelog.md
-          echo "" >> /tmp/changelog.md
-          echo "| 平台 | 文件类型 |" >> /tmp/changelog.md
-          echo "|------|----------|" >> /tmp/changelog.md
-          echo "| Windows | .msi, .exe |" >> /tmp/changelog.md
-          echo "| macOS (Apple Silicon) | .dmg |" >> /tmp/changelog.md
-          echo "| macOS (Intel) | .dmg |" >> /tmp/changelog.md
-          echo "| Linux | .AppImage, .deb |" >> /tmp/changelog.md
-
-      - name: 上传变更日志
-        uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7
         with:
           name: changelog
-          path: /tmp/changelog.md
+          path: changelog.md
 
   build:
     needs: version
@@ -167,139 +118,92 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: 'macos-latest'
-            args: '--target aarch64-apple-darwin'
-            name: 'macOS Apple Silicon'
-          - platform: 'macos-latest'
-            args: '--target x86_64-apple-darwin'
-            name: 'macOS Intel'
-          - platform: 'ubuntu-22.04'
-            args: ''
-            name: 'Linux'
-          - platform: 'windows-latest'
-            args: ''
-            name: 'Windows'
-
-    runs-on: ${{ matrix.platform }}
+          - os: windows-latest
+            artifact: windows
+          - os: macos-latest
+            artifact: macos
+          - os: ubuntu-22.04
+            artifact: linux
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: main
-          fetch-depth: 1
-          fetch-tags: true
+          ref: ${{ needs.version.outputs.tag_name }}
 
-      - name: 设置 Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24.x'
-          cache: 'npm'
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: 安装 Rust (macOS)
-        if: matrix.platform == 'macos-latest'
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-
-      - name: 安装 Rust (其他平台)
-        if: matrix.platform != 'macos-latest'
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust 缓存
-        uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
 
-      - name: 安装 Linux 依赖
-        if: matrix.platform == 'ubuntu-22.04'
+      - name: 安装 Linux 构建依赖
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y gcc g++ libfontconfig-dev libglib2.0-dev libssl-dev libvulkan1 libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libzstd-dev
 
-      - name: 安装前端依赖
-        run: npm ci
+      - name: 构建原生应用
+        shell: bash
+        run: cargo build --release --locked --manifest-path src-tauri/Cargo.toml
 
-      - name: 构建应用
-        id: build_app
-        continue-on-error: ${{ matrix.platform == 'ubuntu-22.04' || matrix.platform == 'windows-latest' }}
-        uses: tauri-apps/tauri-action@v0
+      - name: 打包 Windows 程序
+        if: runner.os == 'Windows'
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: ${{ needs.version.outputs.tag_name }}
-          releaseName: ${{ needs.version.outputs.release_name }}
-          releaseBody: "构建进行中… 稍后将更新变更日志"
-          releaseDraft: false
-          prerelease: false
-          args: ${{ matrix.args }}
-
-      - name: 重试 Windows 构建（NSIS 下载 504 兼容，第 1 次）
-        id: retry_windows_build_1
-        if: steps.build_app.outcome == 'failure' && matrix.platform == 'windows-latest'
-        continue-on-error: true
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: ${{ needs.version.outputs.tag_name }}
-          releaseName: ${{ needs.version.outputs.release_name }}
-          releaseBody: "构建进行中… 稍后将更新变更日志"
-          releaseDraft: false
-          prerelease: false
-          args: ${{ matrix.args }}
-
-      - name: 重试 Windows 构建（NSIS 下载 504 兼容，第 2 次）
-        if: steps.build_app.outcome == 'failure' && steps.retry_windows_build_1.outcome == 'failure' && matrix.platform == 'windows-latest'
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: ${{ needs.version.outputs.tag_name }}
-          releaseName: ${{ needs.version.outputs.release_name }}
-          releaseBody: "构建进行中… 稍后将更新变更日志"
-          releaseDraft: false
-          prerelease: false
-          args: ${{ matrix.args }}
-
-      - name: 重试 AppImage（Linux 502 兼容）
-        if: steps.build_app.outcome == 'failure' && matrix.platform == 'ubuntu-22.04'
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          echo "首次构建时下载 AppRun 失败(502)，重试 AppImage 打包..."
-          cd src-tauri
-          for i in 1 2 3; do
-            echo "第 $i 次尝试..."
-            if cargo tauri bundle --bundles appimage 2>&1; then
-              echo "AppImage 成功"
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "AppImage 三次重试均失败，但 deb/rpm 已成功"
-          exit 0
+          set -euo pipefail
+          mkdir -p dist/package
+          cp src-tauri/target/release/bilibili-account-manager.exe dist/package/BiliAssist.exe
+          7z a "dist/biliassist-${VERSION}-windows-x86_64.zip" ./dist/package/BiliAssist.exe
 
-  release-notes:
-    needs: [version, build]
+      - name: 打包 Unix 程序
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/package
+          cp src-tauri/target/release/bilibili-account-manager dist/package/BiliAssist
+          chmod +x dist/package/BiliAssist
+          OS_NAME=$(printf '%s' "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')
+          ARCH=$(uname -m)
+          tar -C dist/package -czf "dist/biliassist-${VERSION}-${OS_NAME}-${ARCH}.tar.gz" BiliAssist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: binary-${{ matrix.artifact }}
+          path: dist/biliassist-*
+          if-no-files-found: error
+
+  release:
+    needs:
+      - version
+      - build
     runs-on: ubuntu-latest
-    if: always() && needs.build.result == 'success'
     steps:
-      - run: |
-          echo "所有平台构建完成，正在更新 Release 变更日志..."
-
-      - name: 下载变更日志
-        uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v8
         with:
           name: changelog
-          path: /tmp
+          path: release
 
-      - name: 更新 Release 说明
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: binary-*
+          path: release/assets
+          merge-multiple: true
+
+      - name: 创建 GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.version.outputs.tag_name }}
+        shell: bash
         run: |
-          TAG_NAME="${{ needs.version.outputs.tag_name }}"
-          cat /tmp/changelog.md
-          gh release edit "$TAG_NAME" --notes-file /tmp/changelog.md --repo ${{ github.repository }}
+          set -euo pipefail
+          if gh release view "$TAG_NAME" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release edit "$TAG_NAME" --notes-file release/changelog.md --repo "${{ github.repository }}"
+          else
+            gh release create "$TAG_NAME" --title "BiliAssist $TAG_NAME" --notes-file release/changelog.md --repo "${{ github.repository }}"
+          fi
+          gh release upload "$TAG_NAME" release/assets/* --clobber --repo "${{ github.repository }}"

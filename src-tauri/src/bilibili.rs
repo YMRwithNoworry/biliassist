@@ -153,7 +153,7 @@ pub async fn check_login_status() -> Result<LoginStatus, String> {
             // URL 格式: https://passport.bilibili.com/login?SESSDATA=xxx&bili_jct=xxx&DedeUserID=xxx
             let url_cookies = json["data"]["url"]
                 .as_str()
-                .map(|u| extract_cookies_from_url(u))
+                .map(extract_cookies_from_url)
                 .unwrap_or_default();
 
             // 合并 Set-Cookie 和 URL 中的 cookie
@@ -188,9 +188,7 @@ fn extract_cookies_from_url(url: &str) -> Vec<String> {
     query
         .split('&')
         .filter_map(|pair| {
-            let mut parts = pair.splitn(2, '=');
-            let key = parts.next()?;
-            let value = parts.next()?;
+            let (key, value) = pair.split_once('=')?;
             if important_keys.contains(&key) && !value.is_empty() {
                 Some(format!("{}={}", key, url_decode(value)))
             } else {

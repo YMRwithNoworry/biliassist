@@ -167,6 +167,7 @@ fn session_to_message(session: &serde_json::Value, account_uid: &str) -> Option<
 }
 
 /// 私信处理器
+#[derive(Default)]
 pub struct DirectMessageHandler;
 
 impl DirectMessageHandler {

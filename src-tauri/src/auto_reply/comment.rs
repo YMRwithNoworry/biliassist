@@ -818,6 +818,7 @@ impl CommentHandler {
         Ok(messages)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn reply_to_comment(
         &self,
         account: &UserInfo,
@@ -969,6 +970,12 @@ impl CommentHandler {
     }
 }
 
+impl Default for CommentHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl MessageHandler for CommentHandler {
     fn name(&self) -> &'static str {
@@ -1108,7 +1115,7 @@ impl MessageHandler for CommentHandler {
             .or_else(|| message.extra_data["aid"].as_u64())
             .ok_or("缺少评论目标 oid")?;
         let reply_type = message.extra_data["reply_type"].as_u64().unwrap_or(1) as u32;
-        let referer = message.extra_data["referer"].as_str().unwrap_or_else(|| {
+        let referer = message.extra_data["referer"].as_str().unwrap_or({
             if reply_type == 11 {
                 "https://t.bilibili.com/"
             } else {
@@ -1153,7 +1160,7 @@ impl MessageHandler for CommentHandler {
             .or_else(|| message.extra_data["aid"].as_u64())
             .ok_or("缺少评论目标 oid")?;
         let reply_type = message.extra_data["reply_type"].as_u64().unwrap_or(1) as u32;
-        let referer = message.extra_data["referer"].as_str().unwrap_or_else(|| {
+        let referer = message.extra_data["referer"].as_str().unwrap_or({
             if reply_type == 11 {
                 "https://t.bilibili.com/"
             } else {

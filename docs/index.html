@@ -361,7 +361,7 @@
   <!-- ===== Hero ===== -->
   <section class="hero">
     <h1>B站账号管理工具</h1>
-    <p>一款开源桌面应用，支持扫码登录、多账号管理、评论和私信自动回复。基于 Tauri 构建，轻量、安全、跨平台。</p>
+    <p>一款使用 Rust 与 GPUI 构建的原生桌面应用，支持扫码登录、多账号管理，以及视频、动态和私信自动回复。</p>
     <div class="hero-actions">
       <a href="#download" class="btn btn-success">下载安装包</a>
       <a href="#features" class="btn btn-secondary">了解功能</a>
@@ -396,14 +396,14 @@
         </ul>
       </div>
       <div class="feature-card">
-        <h3>智能自动回复</h3>
-        <p>支持对视频评论、私信、粉丝关注三种来源自动回复。可自定义回复内容，支持 <code>{用户名}</code>、<code>{时间}</code> 变量，提供灵活的回复配置。</p>
+        <h3>自动回复</h3>
+        <p>支持视频评论及子评论、动态评论、私信和关注自动回复。可添加指定 BV 视频并配置独立回复内容，支持 <code>{用户名}</code>、<code>{时间}</code> 变量。</p>
         <ul>
           <li>自定义回复内容（支持变量）</li>
-          <li>可配置回复来源（评论 / 私信 / 关注）</li>
-          <li>间隔时间控制，避免频繁发送</li>
-          <li>每个用户只回复一次选项</li>
-          <li>回复记录查看与管理</li>
+          <li>各渠道独立内容与回复策略</li>
+          <li>视频、动态评论自动点赞</li>
+          <li>1 秒起的检查间隔与立即处理</li>
+          <li>回复记录即时更新</li>
         </ul>
       </div>
     </div>
@@ -419,31 +419,28 @@
       <div class="download-card">
         <div class="download-info">
           <h4>Windows</h4>
-          <p>.msi 安装包 或 .exe 安装程序</p>
+          <p>原生 .exe 程序压缩包</p>
         </div>
         <div class="download-links">
-          <a href="https://github.com/YMRwithNoworry/biliassist/releases/latest" class="btn-success" target="_blank">下载 .msi</a>
-          <a href="https://github.com/YMRwithNoworry/biliassist/releases/latest" target="_blank">下载 .exe</a>
+          <a href="https://github.com/YMRwithNoworry/biliassist/releases/latest" class="btn-success" target="_blank">下载 .zip</a>
         </div>
       </div>
       <div class="download-card">
         <div class="download-info">
           <h4>macOS</h4>
-          <p>Apple Silicon (M 系列) · Intel</p>
+          <p>当前 GitHub Runner 架构</p>
         </div>
         <div class="download-links">
-          <a href="https://github.com/YMRwithNoworry/biliassist/releases/latest" class="btn-success" target="_blank">下载 .dmg (Apple Silicon)</a>
-          <a href="https://github.com/YMRwithNoworry/biliassist/releases/latest" target="_blank">下载 .dmg (Intel)</a>
+          <a href="https://github.com/YMRwithNoworry/biliassist/releases/latest" class="btn-success" target="_blank">下载 .tar.gz</a>
         </div>
       </div>
       <div class="download-card">
         <div class="download-info">
           <h4>Linux</h4>
-          <p>.AppImage · .deb</p>
+          <p>原生可执行文件压缩包</p>
         </div>
         <div class="download-links">
-          <a href="https://github.com/YMRwithNoworry/biliassist/releases/latest" class="btn-success" target="_blank">下载 .AppImage</a>
-          <a href="https://github.com/YMRwithNoworry/biliassist/releases/latest" target="_blank">下载 .deb</a>
+          <a href="https://github.com/YMRwithNoworry/biliassist/releases/latest" class="btn-success" target="_blank">下载 .tar.gz</a>
         </div>
       </div>
     </div>

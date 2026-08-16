@@ -1,151 +1,60 @@
-# API 文档
+# 内部 API
 
-## Tauri Commands
+GPUI 界面与业务逻辑运行在同一 Rust 进程中，界面直接调用模块函数，不存在 WebView IPC 命令。
 
-### 1. 扫码登录相关
+## B站扫码登录
 
-#### get_qr_code
-获取 B站登录二维码
+src-tauri/src/bilibili.rs：
 
-**返回值：**
-```typescript
-{
-  qrcode: string;      // base64 编码的二维码图片
-  qrcode_key: string;  // 二维码唯一标识
-}
-```
+- get_qr_code：请求 B站登录二维码并返回 PNG 的 Base64 数据。
+- check_login_status：轮询二维码状态，成功后读取用户信息并保存账号。
 
-#### check_login_status
-检查扫码登录状态
+扫码使用 B站 passport-login 接口，账号信息使用 web-interface/nav 接口确认。
 
-**返回值：**
-```typescript
-{
-  status: string;      // "waiting" | "scanned" | "success" | "expired"
-  user_info?: {
-    uid: string;
-    name: string;
-    cookie: string;
-  }
-}
-```
+## 账号存储
 
-### 2. 账号管理相关
+src-tauri/src/storage.rs：
 
-#### get_accounts
-获取所有已保存的账号
+- get_accounts：读取全部本地账号。
+- activate_account：切换当前账号。
+- delete_account：删除账号。
+- get_active_account：返回自动回复使用的当前账号。
+- sync_accounts：合并外部账号集合。
 
-**返回值：**
-```typescript
-{
-  uid: string;
-  name: string;
-  cookie: string;
-  active: boolean;
-  created_at: string;
-}[]
-```
+Account 包含 uid、name、cookie、active 和 created_at。账号集合使用 AES-256-GCM 加密，Cookie 不得写入日志。
 
-#### activate_account
-激活指定账号
+## 自动回复
 
-**参数：**
-- `uid: string` - 账号 UID
+src-tauri/src/auto_reply/mod.rs：
 
-**返回值：** `void`
+- get_settings / save_settings：读取或保存完整自动回复设置。
+- manual_reply_comments：立即处理视频评论。
+- manual_reply_dynamic_comments：立即处理动态评论。
+- start_auto_reply_service：启动常驻轮询。
+- get_replied_set / get_liked_set：读取去重集合。
+- merge_replied_set / merge_liked_set：合并去重集合。
 
-#### delete_account
-删除指定账号
+MsgSource 支持 Comment、Dynamic、DirectMessage 和 Follow。视频评论处理器还会遍历一级评论的子评论，并处理 tracked_videos 中配置的 BV 号。
 
-**参数：**
-- `uid: string` - 账号 UID
+## 配置模型
 
-**返回值：** `void`
+AutoReplySettings 的主要字段：
 
-### 3. 自动回复相关
+- enabled：自动回复总开关。
+- interval：检查间隔，单位为秒。
+- channels：视频评论、动态评论、私信、关注的独立设置。
+- tracked_videos：指定 BV 视频及其独立回复设置。
+- history：最近的回复记录。
 
-#### get_auto_reply_settings
-获取自动回复配置
+回复策略为 PerMessage 或 OncePerUser。固定文案支持 {用户名} 和 {时间} 变量。
 
-**返回值：**
-```typescript
-{
-  enabled: boolean;
-  message: string;
-  interval: number;
-  reply_only_once: boolean;
-  history: {
-    user: string;
-    time: string;
-    message: string;
-  }[];
-}
-```
+## 本地文件
 
-#### save_auto_reply_settings
-保存自动回复配置
+数据目录为用户主目录下的 .bilibili_account_manager/：
 
-**参数：**
-```typescript
-{
-  enabled: boolean;
-  message: string;
-  interval: number;
-  replyOnlyOnce: boolean;
-}
-```
-
-**返回值：** `void`
-
-#### test_auto_reply
-测试自动回复内容
-
-**返回值：** `string` - 格式化后的回复内容
-
-## B站 API
-
-### 扫码登录流程
-
-1. 生成二维码
-   - GET `https://passport.bilibili.com/x/passport-login/web/qrcode/generate`
-   - 参数：`appkey`, `local_id`
-
-2. 轮询登录状态
-   - GET `https://passport.bilibili.com/x/passport-login/web/qrcode/poll`
-   - 参数：`qrcode_key`
-
-3. 获取用户信息
-   - GET `https://api.bilibili.com/x/web-interface/nav`
-
-### 私信相关
-
-1. 获取私信列表
-   - GET `https://api.vc.bilibili.com/svr_sync/v1/svr_sync/fetch_session_msgs`
-
-2. 发送私信
-   - POST `https://api.vc.bilibili.com/web_im/v1/web_im/send_msg`
-
-## 数据存储
-
-### 存储位置
-- Windows: `C:\Users\<用户名>\.bilibili_account_manager\`
-- macOS: `/Users/<用户名>/.bilibili_account_manager/`
-- Linux: `/home/<用户名>/.bilibili_account_manager/`
-
-### 文件说明
-
-#### bilibili_accounts.enc
-加密存储的账号信息，使用 AES-256-GCM 加密
-
-#### auto_reply_settings.json
-自动回复配置（明文存储）
-
-#### key.bin
-加密密钥文件
-
-## 安全说明
-
-1. 所有账号信息使用 AES-256-GCM 加密存储
-2. 加密密钥单独存储在 `key.bin` 文件中
-3. Cookie 信息仅在内存中使用，不写入日志
-4. 网络请求使用 HTTPS 加密传输
+- bilibili_accounts.enc：加密账号数据。
+- key.bin：AES-256 密钥。
+- auto_reply_settings.json：回复配置与历史。
+- replied_set.json：回复去重集合。
+- liked_set.json：点赞去重集合。
+- auth_session.json：Supabase 应用会话。

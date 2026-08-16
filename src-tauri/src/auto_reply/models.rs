@@ -68,7 +68,7 @@ pub enum ReplyPolicy {
     OncePerUser,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelReplySettings {
     #[serde(default = "default_true")]
@@ -369,7 +369,7 @@ impl<'de> Deserialize<'de> for AutoReplySettings {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ReplyHistory {
     pub user: String,

@@ -1,80 +1,55 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+## 项目概览
 
-## Project Overview
+BiliAssist 是使用 Rust、GPUI 和 gpui-component 构建的 B站账号管理原生桌面应用，界面语言为中文。
 
-BilibiliAccountManager — a Tauri 2 desktop app for managing Bilibili (B站) accounts with QR login and automated reply features. The UI is in Chinese.
+## 技术栈
 
-## Tech Stack
+- 界面：GPUI + gpui-component
+- 异步：Tokio
+- 网络：reqwest
+- 应用认证：Supabase Auth
+- 存储：AES-256-GCM 加密本地文件
 
-- **Frontend**: Vue 3 (Composition API) + Vite + Vue Router + Pinia
-- **Backend**: Rust + Tauri 2 + Tokio async runtime
-- **Auth**: Supabase (app-level user auth, separate from Bilibili auth)
-- **Storage**: AES-256-GCM encrypted local files in `~/.bilibili_account_manager/`
+## 常用命令
 
-## Common Commands
+从仓库根目录运行：
 
-```bash
-# Install frontend deps
-npm install
+    cargo run --manifest-path src-tauri/Cargo.toml
+    cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+    cargo check --locked --manifest-path src-tauri/Cargo.toml
+    cargo test --locked --manifest-path src-tauri/Cargo.toml
+    cargo build --release --locked --manifest-path src-tauri/Cargo.toml
 
-# Development (starts Vite + Tauri dev server)
-npm run tauri dev
+package.json 只保存发布版本并提供上述 Cargo 命令的 npm 别名，不包含 Web 前端依赖。
 
-# Production build
-npm run tauri build
+## 架构
 
-# Frontend only (Vite)
-npm run dev
-npm run build
+- src-tauri/src/main.rs：原生二进制入口。
+- src-tauri/src/lib.rs：初始化日志、本地存储、自动回复服务和 GPUI 应用。
+- src-tauri/src/ui/app.rs：主窗口、导航、账号管理与自动回复界面。
+- src-tauri/src/ui/auth.rs：Supabase 邮箱密码和 OTP 认证。
+- src-tauri/src/ui/platform.rs：本地激活与开机自启。
+- src-tauri/src/bilibili.rs：B站二维码登录。
+- src-tauri/src/storage.rs：加密账号持久化。
+- src-tauri/src/auto_reply/：视频评论、动态评论、私信和关注处理器。
 
-# Rust backend only
-cd src-tauri && cargo build
-```
+GPUI 界面直接调用同一进程中的 Rust 模块，没有 WebView 或 IPC command 边界。
 
-## Architecture
+## 自动回复
 
-### Frontend (`src/`)
-- `main.js` — Vue app entry, mounts Pinia + Router
-- `App.vue` — root component, handles init loading and auth check via `useAuthStore`
-- `router/index.js` — hash-based routing; all routes except `/auth` require Supabase authentication (`meta.requiresAuth`)
-- `stores/auth.js` — Pinia store wrapping Supabase auth (email OTP, password login)
-- `lib/supabase.js` + `lib/config.js` — Supabase client setup
-- `views/` — page components: `HomeView`, `LoginView` (Bilibili QR), `AccountsView`, `AutoReplyView`, `SponsorView`, `AuthPage`
+- MsgSource 包含 Comment、Dynamic、DirectMessage 和 Follow。
+- 视频评论处理器覆盖一级评论、子评论以及用户配置的指定 BV 视频。
+- 每个渠道拥有独立回复内容和策略，视频与动态渠道支持自动点赞。
+- 配置与历史保存在 auto_reply_settings.json，回复和点赞去重集合单独持久化。
 
-### Backend (`src-tauri/src/`)
-- `main.rs` — thin entry, calls `lib::run()`
-- `lib.rs` — Tauri app setup: registers all `#[tauri::command]` handlers, creates system tray, initializes storage/auto-reply on startup, handles autostart and window close-to-tray
-- `bilibili.rs` — Bilibili API integration: QR code generation, login polling, user info retrieval. Uses a global `reqwest::Client` with cookie store
-- `storage.rs` — encrypted account persistence (AES-256-GCM), QR code key temp storage. Data dir: `~/.bilibili_account_manager/`
-- `auto_reply/` — modular auto-reply system:
-  - `mod.rs` — `AutoReplyService` with `HandlerRegistry`, main loop, backward-compat API
-  - `handler.rs` — `MessageHandler` trait, `HandlerRegistry`, `format_message()` with `{用户名}` and `{时间}` variables
-  - `models.rs` — `AutoReplySettings`, `MsgSource` enum (Comment/DirectMessage/Follow), `ReplyHistory`
-  - `state.rs` — global async state with `RwLock`
-  - `comment.rs` — comment reply handler (uses WBI signing)
-  - `direct_message.rs` — DM reply handler
-  - `follow.rs` — follow event handler
-  - `wbi.rs` — Bilibili WBI signature implementation
-  - `http.rs` — shared HTTP client helpers
+## 发布
 
-### Frontend-Backend Communication
-All Tauri commands are defined in `lib.rs` with `#[tauri::command]` and invoked from the frontend via `@tauri-apps/api`. Key commands: `get_qr_code`, `check_login_status`, `get_accounts`, `sync_accounts`, `activate_account`, `delete_account`, `get_auto_reply_settings`, `save_auto_reply_settings`, `test_auto_reply`, `manual_reply_video_comments`, `get_autostart_status`, `set_autostart`.
+- .github/workflows/release.yml 根据 Conventional Commit 自动调整语义化版本。
+- 版本在 package.json 和 src-tauri/Cargo.toml 中保持一致。
+- Windows、macOS、Linux 均直接构建 Cargo 原生二进制。
 
-## CI/CD
+## 数据
 
-- `.github/workflows/release.yml` — auto-versioning (reads commit messages for `feat:`/`fix:` to determine semver bump), builds for Windows/macOS/Linux, creates GitHub releases
-- `.github/workflows/pages.yml` — deploys `docs/` to GitHub Pages on push to main
-- Version is synced across three files: `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`
-
-## Commit Convention
-
-Conventional commits: `feat:`, `fix:`, `docs:`, `style:`, `refactor:`, `test:`, `chore:`. The release workflow uses these to auto-bump version numbers.
-
-## Data Storage
-
-All persistent data lives in `~/.bilibili_account_manager/`:
-- `bilibili_accounts.enc` — AES-256-GCM encrypted account list
-- `auto_reply_settings.json` — auto-reply config (plaintext JSON)
-- `key.bin` — 32-byte encryption key
+用户数据位于 ~/.bilibili_account_manager/。不要在开发或测试中删除 key.bin，也不要提交 Cookie、访问令牌或真实用户数据。

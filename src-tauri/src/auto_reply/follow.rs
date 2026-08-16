@@ -6,6 +6,7 @@ use crate::bilibili::UserInfo;
 use async_trait::async_trait;
 
 /// 关注处理器
+#[derive(Default)]
 pub struct FollowHandler;
 
 impl FollowHandler {

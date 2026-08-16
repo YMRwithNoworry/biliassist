@@ -1,129 +1,47 @@
-# 快速开始指南
+# 快速开始
 
-## 前置条件
+## 环境
 
-在开始之前，请确保已安装以下软件：
+安装 Rust stable，并确认 rustc 和 cargo 命令可用。
 
-### 1. Node.js
-下载安装：https://nodejs.org/
+Linux 需要安装 GPUI 使用的系统库。Ubuntu 22.04 可执行：
 
-验证安装：
-```bash
-node --version
-npm --version
-```
+    sudo apt-get install gcc g++ libfontconfig-dev libglib2.0-dev libssl-dev libvulkan1 libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libzstd-dev
 
-### 2. Rust
-下载安装：https://rustup.rs/
+## 启动
 
-验证安装：
-```bash
-rustc --version
-cargo --version
-```
+Windows 可双击 start.bat。Linux/macOS 可执行：
 
-## 快速启动
+    chmod +x start.sh
+    ./start.sh
 
-### Windows 用户
+也可直接启动：
 
-双击运行 `start.bat`，或在命令行中执行：
-```bash
-start.bat
-```
+    cargo run --locked --manifest-path src-tauri/Cargo.toml
 
-### Linux/macOS 用户
+首次打开后，先使用邮箱登录应用，再进入“扫码登录”添加 B站账号。
 
-赋予执行权限并运行：
-```bash
-chmod +x start.sh
-./start.sh
-```
+## 自动回复
 
-### 手动启动
+1. 在“账号管理”确认当前 B站账号。
+2. 在“自动回复”打开总开关并设置检查间隔。
+3. 分别配置视频评论、动态评论、私信和关注渠道。
+4. 需要处理特定视频时，添加 BV 号并填写独立回复内容。
+5. 保存后可使用“立即处理视频评论”或“立即处理动态评论”验证。
 
-如果启动脚本无法运行，可以手动执行：
+视频评论渠道会同时处理一级评论和子评论。回复记录保存在本地，并在处理结束后立即刷新。
 
-```bash
-# 1. 安装前端依赖
-npm install
+## 构建
 
-# 2. 启动开发服务器
-npm run tauri dev
-```
+Windows 可运行 build.bat，全平台通用命令为：
 
-## 首次使用
+    cargo build --release --locked --manifest-path src-tauri/Cargo.toml
 
-### 1. 扫码登录
-1. 启动应用后，点击"扫码登录"按钮
-2. 使用 B站 App 扫描二维码
-3. 在手机上确认登录
-4. 登录成功后，账号信息会自动保存
-
-### 2. 管理账号
-1. 点击"管理账号"按钮
-2. 查看所有已登录的账号
-3. 点击"激活"切换当前使用的账号
-4. 点击"删除"移除不需要的账号
-
-### 3. 设置自动回复
-1. 点击"设置回复"按钮
-2. 勾选"启用自动回复"
-3. 编辑回复内容（支持变量：{用户名}、{时间}）
-4. 设置回复间隔（秒）
-5. 选择是否每个用户只回复一次
-6. 点击"测试回复"预览效果
-
-## 构建发布版本
-
-### Windows
-```bash
-build.bat
-```
-
-### Linux/macOS
-```bash
-npm run tauri build
-```
-
-构建完成后，安装包位于：
-- Windows: `src-tauri\target\release\bundle\`
-- Linux: `src-tauri/target/release/bundle/`
-- macOS: `src-tauri/target/release/bundle/`
+产物位于 src-tauri/target/release/。
 
 ## 常见问题
 
-### Q: 扫码后没有反应？
-A: 请确保网络连接正常，并刷新页面重试。
-
-### Q: 账号信息丢失？
-A: 检查用户目录下的 `.bilibili_account_manager` 文件夹是否存在。
-
-### Q: 自动回复不工作？
-A: 确保已启用自动回复功能，并且应用保持运行状态。
-
-### Q: 构建失败？
-A: 检查 Rust 和 Node.js 版本是否符合要求，并确保网络连接正常。
-
-## 数据备份
-
-账号数据存储在：
-- Windows: `C:\Users\<用户名>\.bilibili_account_manager\`
-- macOS: `/Users/<用户名>/.bilibili_account_manager/`
-- Linux: `/home/<用户名>/.bilibili_account_manager/`
-
-建议定期备份此文件夹。
-
-## 技术支持
-
-如遇到问题，请：
-1. 查看控制台错误信息
-2. 检查日志文件
-3. 提交 Issue 并附上详细的错误描述
-
-## 更新日志
-
-### v0.1.0 (2024-04-19)
-- 初始版本发布
-- 支持扫码登录
-- 支持账号管理
-- 支持自动回复
+- 扫码无响应：确认网络可访问 B站接口，二维码过期后重新生成。
+- 自动回复未执行：确认总开关、当前渠道和当前 B站账号均已启用。
+- 账号无法读取：检查 .bilibili_account_manager/key.bin 是否被移动或替换。
+- Linux 窗口无法打开：确认 Vulkan 驱动和 Wayland/X11 运行库已经安装。

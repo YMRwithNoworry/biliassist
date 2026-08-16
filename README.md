@@ -1,79 +1,62 @@
-# B站账号管理工具
+# BiliAssist
 
-基于 Tauri 2 开发的 B站账号管理工具，支持扫码登录和自动回复粉丝信息。
+BiliAssist 是使用 Rust、GPUI 和 [gpui-component](https://github.com/longbridge/gpui-component) 构建的 B站账号管理与自动回复原生桌面应用。界面直接由 GPU 渲染，不依赖浏览器 WebView、Vue 或 Tauri。
 
-## 功能特性
+## 功能
 
-- 扫码登录：使用 B站扫码功能快速登录账号
-- 账号管理：支持多账号存储、切换和删除
-- 自动回复：配置自动回复粉丝私信内容，支持变量替换
-- 数据安全：使用 AES-256 加密存储账号信息
+- Supabase 邮箱密码、邮件验证码登录和 Plus 等级识别
+- B站二维码登录，多账号加密保存、切换、删除与云端同步
+- 自动回复视频评论、评论区子评论、动态评论、私信和关注事件
+- 自动点赞视频与动态评论
+- 按渠道配置固定回复、每条回复或每用户一次策略
+- 添加指定 BV 视频，并为每个视频单独配置回复内容、策略与点赞
+- 1 至 3600 秒检查间隔、立即处理评论和实时回复记录
+- 开机自启与本地 Plus 激活
 
 ## 技术栈
 
-- 前端：Vue 3 + Vite
-- 后端：Rust + Tauri 2
-- 存储：本地加密文件存储
-- 网络：reqwest HTTP 客户端
-
-## 安装依赖
-
-### 前端依赖
-```bash
-npm install
-```
-
-### Rust 依赖
-```bash
-cd src-tauri
-cargo build
-```
+- 原生界面：GPUI + gpui-component
+- 异步运行时：Tokio
+- 网络：reqwest
+- 本地存储：AES-256-GCM
+- 应用认证：Supabase Auth
 
 ## 开发
 
-启动开发服务器：
-```bash
-npm run tauri dev
-```
+需要安装 Rust stable。Linux 还需要 Fontconfig、Wayland/X11、Vulkan Loader 等 GPUI 系统依赖。
+
+    cargo run --locked --manifest-path src-tauri/Cargo.toml
+
+也可使用兼容脚本：
+
+    npm run dev
+
+package.json 不包含 JavaScript 依赖，只提供版本号和 Cargo 命令别名。
+
+## 检查与测试
+
+    cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+    cargo check --locked --manifest-path src-tauri/Cargo.toml
+    cargo test --locked --manifest-path src-tauri/Cargo.toml
 
 ## 构建
 
-构建生产版本：
-```bash
-npm run tauri build
-```
+    cargo build --release --locked --manifest-path src-tauri/Cargo.toml
 
-## 使用说明
-
-### 1. 扫码登录
-- 点击首页的"扫码登录"按钮
-- 使用 B站 App 扫描二维码
-- 在手机上确认登录
-
-### 2. 账号管理
-- 查看所有已登录的账号
-- 激活/切换当前使用的账号
-- 删除不需要的账号
-
-### 3. 自动回复设置
-- 启用/禁用自动回复功能
-- 配置回复内容（支持变量：{用户名}、{时间}）
-- 设置回复间隔时间
-- 选择是否每个用户只回复一次
-- 查看回复历史记录
+Windows 输出位于 src-tauri/target/release/bilibili-account-manager.exe，macOS/Linux 输出位于 src-tauri/target/release/bilibili-account-manager。
 
 ## 数据存储
 
-所有数据存储在用户目录下的 `.bilibili_account_manager` 文件夹中：
-- `bilibili_accounts.enc`：加密的账号信息
-- `auto_reply_settings.json`：自动回复设置
-- `key.bin`：加密密钥
+运行数据位于用户主目录下的 .bilibili_account_manager/：
 
-## 注意事项
+- bilibili_accounts.enc：AES-256-GCM 加密的 B站账号
+- key.bin：本地账号加密密钥
+- auto_reply_settings.json：自动回复配置和历史
+- replied_set.json：已回复去重记录
+- liked_set.json：已点赞去重记录
+- auth_session.json：应用登录会话
 
-- 请妥善保管加密密钥文件
-- 建议定期备份账号数据
-- 自动回复功能需要保持应用运行
+请勿删除或替换 key.bin，否则已有账号数据将无法解密。自动回复功能需要应用保持运行。
 
 ## License
 
