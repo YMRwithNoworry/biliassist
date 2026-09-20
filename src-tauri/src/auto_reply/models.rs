@@ -11,6 +11,17 @@ fn default_interval() -> u64 {
     60
 }
 
+/// 快速通道默认节奏（秒）：只抓每个目标的最新一页，专职秒回新评论。
+pub const DEFAULT_FAST_INTERVAL: u64 = 3;
+/// 快速通道允许的最快节奏，避免请求过密触发风控。
+pub const MIN_FAST_INTERVAL: u64 = 1;
+/// 快速通道允许的最慢节奏。
+pub const MAX_FAST_INTERVAL: u64 = 60;
+
+fn default_fast_interval() -> u64 {
+    DEFAULT_FAST_INTERVAL
+}
+
 fn default_message() -> String {
     DEFAULT_MESSAGE.to_string()
 }
@@ -221,6 +232,8 @@ impl AutoReplyChannels {
 pub struct AutoReplySettings {
     pub enabled: bool,
     pub interval: u64,
+    /// 快速通道节奏（秒）：只检查每个目标的最新一页，用于秒回新评论。
+    pub fast_interval: u64,
     pub channels: AutoReplyChannels,
     pub tracked_videos: Vec<TrackedVideoSettings>,
     pub history: Vec<ReplyHistory>,
@@ -231,6 +244,7 @@ impl Default for AutoReplySettings {
         Self {
             enabled: true,
             interval: default_interval(),
+            fast_interval: default_fast_interval(),
             channels: AutoReplyChannels::default(),
             tracked_videos: Vec::new(),
             history: Vec::new(),
@@ -241,6 +255,12 @@ impl Default for AutoReplySettings {
 impl AutoReplySettings {
     pub fn any_enabled(&self) -> bool {
         self.channels.any_enabled() || self.has_enabled_tracked_videos()
+    }
+
+    /// 快速通道节奏（秒）。做上下限保护，避免手工改坏的配置把节奏设成 0 或过大。
+    pub fn fast_interval_secs(&self) -> u64 {
+        self.fast_interval
+            .clamp(MIN_FAST_INTERVAL, MAX_FAST_INTERVAL)
     }
 
     pub fn channel(&self, source: MsgSource) -> &ChannelReplySettings {
@@ -296,6 +316,8 @@ struct AutoReplySettingsWire {
     #[serde(default)]
     interval: Option<u64>,
     #[serde(default)]
+    fast_interval: Option<u64>,
+    #[serde(default)]
     channels: Option<AutoReplyChannels>,
     #[serde(default)]
     tracked_videos: Option<Vec<TrackedVideoSettings>>,
@@ -324,6 +346,7 @@ impl<'de> Deserialize<'de> for AutoReplySettings {
             return Ok(Self {
                 enabled: wire.enabled.unwrap_or(true),
                 interval: wire.interval.unwrap_or_else(default_interval),
+                fast_interval: wire.fast_interval.unwrap_or_else(default_fast_interval),
                 channels,
                 tracked_videos: wire.tracked_videos.unwrap_or_default(),
                 history: wire.history,
@@ -351,6 +374,7 @@ impl<'de> Deserialize<'de> for AutoReplySettings {
         Ok(Self {
             enabled: wire.enabled.unwrap_or(true),
             interval: wire.interval.unwrap_or_else(default_interval),
+            fast_interval: wire.fast_interval.unwrap_or_else(default_fast_interval),
             channels: AutoReplyChannels {
                 comment: CommentReplySettings {
                     reply: comment_reply.clone(),
@@ -527,5 +551,42 @@ mod tests {
             ..TrackedVideoSettings::default()
         };
         assert!(settings.normalized_bvid().is_none());
+    }
+
+    #[test]
+    fn legacy_settings_without_fast_interval_fall_back_to_the_default() {
+        let stored = serde_json::json!({
+            "enabled": true,
+            "interval": 5,
+            "channels": {
+                "comment": {
+                    "enabled": true,
+                    "message": "默认回复"
+                }
+            },
+            "history": []
+        });
+
+        let settings: AutoReplySettings = serde_json::from_value(stored).unwrap();
+
+        assert_eq!(DEFAULT_FAST_INTERVAL, settings.fast_interval);
+        assert_eq!(DEFAULT_FAST_INTERVAL, settings.fast_interval_secs());
+    }
+
+    #[test]
+    fn fast_interval_round_trips_and_is_clamped() {
+        let mut settings = AutoReplySettings::default();
+        settings.fast_interval = 5;
+
+        let json = serde_json::to_string(&settings).unwrap();
+        assert!(json.contains("\"fastInterval\":5"));
+
+        let decoded: AutoReplySettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(5, decoded.fast_interval_secs());
+
+        settings.fast_interval = 0;
+        assert_eq!(MIN_FAST_INTERVAL, settings.fast_interval_secs());
+        settings.fast_interval = 9999;
+        assert_eq!(MAX_FAST_INTERVAL, settings.fast_interval_secs());
     }
 }

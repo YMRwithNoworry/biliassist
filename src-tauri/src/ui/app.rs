@@ -1550,7 +1550,7 @@ impl AppView {
                                 div()
                                     .text_sm()
                                     .text_color(theme.muted_foreground)
-                                    .child("范围 1 至 3600 秒"),
+                                    .child("范围 1 至 3600 秒；新评论由秒级快速检查实时回复"),
                             ),
                     )
                     .child(NumberInput::new(&self.interval_input).w(px(160.))),

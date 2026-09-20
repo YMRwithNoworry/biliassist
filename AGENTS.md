@@ -43,7 +43,19 @@ GPUI 界面直接调用同一进程中的 Rust 模块，没有 WebView 或 IPC c
 - MsgSource 包含 Comment、Dynamic、DirectMessage 和 Follow。
 - 视频评论处理器覆盖一级评论、子评论以及用户配置的指定 BV 视频。
 - 每个渠道拥有独立回复内容和策略，视频与动态渠道支持自动点赞。
+- 评论抓取是流式的（边抓边回）：抓到一页就立刻把消息送进通道并回复，不再等整轮扫描结束。
+- 服务循环分两档：快速通道每 fastInterval 秒只抓每个评论目标的最新一页，负责秒回新评论；
+  interval 仍控制完整补扫、私信和关注。私信、关注只走完整通道。
+- fastInterval 默认 3 秒，范围 1 至 60，配置写入 auto_reply_settings.json；旧配置缺少该字段时取默认值。
+- 快速通道对"子评论翻页"设有预算（每个目标 10 条线程），避免热门视频请求过密。
 - 配置与历史保存在 auto_reply_settings.json，回复和点赞去重集合单独持久化。
+
+## 提交与推送
+
+- 改动通过 cargo fmt、cargo check、cargo test 后，直接提交并推送到 origin main，不需要再向用户确认。
+- 提交信息使用 Conventional Commits；release workflow 按最后一条提交信息决定版本号
+  （feat 提升 minor，fix/chore/docs 提升 patch，带 `!` 或 BREAKING CHANGE 提升 major）。
+- 推送会触发发布构建，因此推送前必须确认 Cargo.lock 已同步且 `--locked` 构建可通过。
 
 ## 发布
 

@@ -9,8 +9,9 @@ pub mod wbi;
 
 pub use models::{AutoReplySettings, MsgSource};
 pub use state::get_global_state;
+use state::AutoReplyState;
 
-use handler::HandlerRegistry;
+use handler::{HandlerRegistry, ScanMode};
 use tokio::time::{Duration, Instant};
 
 const DISABLED_POLL_INTERVAL_SECS: u64 = 5;
@@ -39,34 +40,51 @@ impl AutoReplyService {
     }
 
     pub async fn start(&self) {
-        log::info!("\u{81ea}\u{52a8}\u{56de}\u{590d}\u{670d}\u{52a1}\u{542f}\u{52a8}");
-        let mut next_poll = Instant::now();
+        log::info!("自动回复服务启动");
+        // 快速通道：只抓每个评论目标的最新一页，让新评论在几秒内得到回复。
+        // 完整通道：仍按用户设置的间隔补扫历史评论，并处理私信、关注等渠道。
+        let mut next_fast = Instant::now();
+        let mut next_full = Instant::now();
 
         loop {
-            tokio::time::sleep_until(next_poll).await;
-            let poll_started_at = Instant::now();
+            tokio::time::sleep_until(next_fast.min(next_full)).await;
+            let tick_started_at = Instant::now();
             let state = get_global_state();
             let settings = state.get_settings().await;
+
+            let fast_due = tick_started_at >= next_fast;
+            let full_due = tick_started_at >= next_full;
 
             let replies_enabled = settings.enabled && settings.any_enabled();
             let likes_enabled = MsgSource::COMMENT_SOURCES
                 .iter()
                 .any(|source| settings.likes_enabled_for_source(*source));
             if !replies_enabled && !likes_enabled {
-                next_poll = schedule_next_poll(
-                    poll_started_at,
-                    DISABLED_POLL_INTERVAL_SECS,
+                let idle = Instant::now() + Duration::from_secs(DISABLED_POLL_INTERVAL_SECS);
+                next_fast = idle;
+                next_full = idle;
+                continue;
+            }
+
+            // 先推进时间表：即使本轮因账号不可用而空转，快速通道也会继续按节奏重试。
+            if fast_due {
+                next_fast = schedule_next_poll(
+                    tick_started_at,
+                    settings.fast_interval_secs(),
                     Instant::now(),
                 );
-                continue;
+            }
+            if full_due {
+                next_full = schedule_next_poll(tick_started_at, settings.interval, Instant::now());
             }
 
             let account = match crate::storage::get_active_account().await {
                 Some(acc) => acc,
                 None => {
-                    log::warn!("\u{6ca1}\u{6709}\u{6fc0}\u{6d3b}\u{7684}\u{8d26}\u{53f7}");
-                    next_poll =
-                        schedule_next_poll(poll_started_at, settings.interval, Instant::now());
+                    // 快速通道每几秒都会重试，只有完整通道才需要提醒。
+                    if full_due {
+                        log::warn!("没有激活的账号");
+                    }
                     continue;
                 }
             };
@@ -74,92 +92,116 @@ impl AutoReplyService {
             let has_sessdata = account.cookie.contains("SESSDATA=");
             let has_bili_jct = account.cookie.contains("bili_jct=");
             let has_dede = account.cookie.contains("DedeUserID=");
-            log::info!(
-                "\u{8d26}\u{53f7} cookie \u{8bca}\u{65ad}: len={}, SESSDATA={}, bili_jct={}, DedeUserID={}",
-                account.cookie.len(), has_sessdata, has_bili_jct, has_dede
-            );
+            if full_due {
+                log::info!(
+                    "账号 cookie 诊断: len={}, SESSDATA={}, bili_jct={}, DedeUserID={}",
+                    account.cookie.len(),
+                    has_sessdata,
+                    has_bili_jct,
+                    has_dede
+                );
+            }
 
             if !has_sessdata || !has_bili_jct {
-                log::error!("cookie \u{4e0d}\u{5b8c}\u{6574}\u{ff08}\u{7f3a}\u{5c11} SESSDATA \u{6216} bili_jct\u{ff09}\u{ff0c}\u{8bf7}\u{5220}\u{9664}\u{8d26}\u{53f7}\u{91cd}\u{65b0}\u{626b}\u{7801}\u{767b}\u{5f55}");
-                next_poll = schedule_next_poll(poll_started_at, settings.interval, Instant::now());
+                if full_due {
+                    log::error!(
+                        "cookie 不完整（缺少 SESSDATA 或 bili_jct），请删除账号重新扫码登录"
+                    );
+                }
                 continue;
             }
 
-            if settings.enabled {
-                for source in settings.enabled_sources() {
-                    if let Some(handler) = self.registry.get_handler(&source) {
-                        match handler.handle(&account, state).await {
-                            Ok(result) => {
-                                if result.success_count > 0
-                                    || result.error_count > 0
-                                    || result.like_success_count > 0
-                                    || result.like_error_count > 0
-                                {
-                                    log::info!(
-                                        "{} \u{5904}\u{7406}\u{5b8c}\u{6210}: \u{6210}\u{529f}={}, \u{5931}\u{8d25}={}, \u{70b9}\u{8d5e}\u{6210}\u{529f}={}, \u{70b9}\u{8d5e}\u{5931}\u{8d25}={}",
-                                        handler.name(),
-                                        result.success_count,
-                                        result.error_count,
-                                        result.like_success_count,
-                                        result.like_error_count
-                                    );
-                                }
-                                if result.stopped_by_rate_limit {
-                                    log::warn!("{} \u{89e6}\u{53d1}\u{98ce}\u{63a7}\u{9650}\u{5236}\u{ff0c}\u{505c}\u{6b62}\u{5904}\u{7406}", handler.name());
-                                }
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "{} \u{5904}\u{7406}\u{5931}\u{8d25}: {}",
-                                    handler.name(),
-                                    e
-                                );
-                            }
+            if fast_due {
+                self.run_pass(&account, state, &settings, ScanMode::Newest)
+                    .await;
+            }
+            if full_due {
+                self.run_pass(&account, state, &settings, ScanMode::Full)
+                    .await;
+            }
+        }
+    }
+
+    /// 执行一轮抓取并回复。
+    ///
+    /// `ScanMode::Newest` 只抓每个目标的最新一页（快速通道），
+    /// `ScanMode::Full` 会按上限补扫历史评论（完整通道）。
+    async fn run_pass(
+        &self,
+        account: &crate::bilibili::UserInfo,
+        state: &AutoReplyState,
+        settings: &AutoReplySettings,
+        mode: ScanMode,
+    ) {
+        if settings.enabled {
+            for source in settings.enabled_sources() {
+                if !mode.includes(source) {
+                    continue;
+                }
+                let Some(handler) = self.registry.get_handler(&source) else {
+                    continue;
+                };
+                match handler.handle_in(account, state, mode).await {
+                    Ok(result) => {
+                        if result.success_count > 0
+                            || result.error_count > 0
+                            || result.like_success_count > 0
+                            || result.like_error_count > 0
+                        {
+                            log::info!(
+                                "{}({}) 处理完成: 成功={}, 失败={}, 点赞成功={}, 点赞失败={}",
+                                handler.name(),
+                                mode.label(),
+                                result.success_count,
+                                result.error_count,
+                                result.like_success_count,
+                                result.like_error_count
+                            );
+                        }
+                        if result.stopped_by_rate_limit {
+                            log::warn!("{}触发风控限制，停止处理", handler.name());
                         }
                     }
+                    Err(e) => log::error!("{}处理失败: {}", handler.name(), e),
                 }
             }
+        }
 
-            for source in MsgSource::COMMENT_SOURCES {
-                let reply_enabled = settings
-                    .comment_settings(source)
-                    .map(|channel| channel.reply.enabled)
-                    .unwrap_or(false);
-                if settings.likes_enabled_for_source(source)
-                    && (!settings.enabled || !reply_enabled)
-                    && !(settings.enabled
-                        && source == MsgSource::Comment
-                        && settings.has_enabled_tracked_videos())
-                {
-                    if let Some(handler) = self.registry.get_handler(&source) {
-                        match handler.handle_likes_only(&account, state).await {
-                            Ok(result) => {
-                                if result.like_success_count > 0 || result.like_error_count > 0 {
-                                    log::info!(
-                                    "{} \u{70b9}\u{8d5e}\u{5904}\u{7406}\u{5b8c}\u{6210}: \u{70b9}\u{8d5e}\u{6210}\u{529f}={}, \u{70b9}\u{8d5e}\u{5931}\u{8d25}={}",
-                                    handler.name(),
-                                    result.like_success_count,
-                                    result.like_error_count
-                                );
-                                }
-                                if result.stopped_by_rate_limit {
-                                    log::warn!("{} \u{70b9}\u{8d5e}\u{89e6}\u{53d1}\u{98ce}\u{63a7}\u{9650}\u{5236}\u{ff0c}\u{505c}\u{6b62}\u{5904}\u{7406}", handler.name());
-                                }
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "{} \u{70b9}\u{8d5e}\u{5904}\u{7406}\u{5931}\u{8d25}: {}",
-                                    handler.name(),
-                                    e
-                                );
-                            }
+        for source in MsgSource::COMMENT_SOURCES {
+            if !mode.includes(source) {
+                continue;
+            }
+            let reply_enabled = settings
+                .comment_settings(source)
+                .map(|channel| channel.reply.enabled)
+                .unwrap_or(false);
+            if settings.likes_enabled_for_source(source)
+                && (!settings.enabled || !reply_enabled)
+                && !(settings.enabled
+                    && source == MsgSource::Comment
+                    && settings.has_enabled_tracked_videos())
+            {
+                let Some(handler) = self.registry.get_handler(&source) else {
+                    continue;
+                };
+                match handler.handle_likes_only_in(account, state, mode).await {
+                    Ok(result) => {
+                        if result.like_success_count > 0 || result.like_error_count > 0 {
+                            log::info!(
+                                "{}({}) 点赞处理完成: 点赞成功={}, 点赞失败={}",
+                                handler.name(),
+                                mode.label(),
+                                result.like_success_count,
+                                result.like_error_count
+                            );
+                        }
+                        if result.stopped_by_rate_limit {
+                            log::warn!("{}点赞触发风控限制，停止处理", handler.name());
                         }
                     }
+                    Err(e) => log::error!("{}点赞处理失败: {}", handler.name(), e),
                 }
             }
-
-            let interval = state.get_settings().await.interval;
-            next_poll = schedule_next_poll(poll_started_at, interval, Instant::now());
         }
     }
 

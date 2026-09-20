@@ -24,6 +24,66 @@ pub struct HandleResult {
     pub stopped_by_rate_limit: bool,
 }
 
+/// 通道容量：生产者抓到的消息先放进缓冲区，消费者按节奏回复。
+const STREAM_BUFFER: usize = 16;
+
+/// 单条消息的处理结果。
+#[derive(Debug, Clone, Copy)]
+pub struct MessageOutcome {
+    /// 命中风控限制，本轮应立即停止。
+    stop: bool,
+    /// 是否真的请求了 B站写接口（回复或点赞），用于决定是否需要节流。
+    acted: bool,
+}
+
+impl MessageOutcome {
+    /// 直接跳过（本地判重命中，没有产生任何请求）。
+    fn skipped() -> Self {
+        Self {
+            stop: false,
+            acted: false,
+        }
+    }
+}
+
+/// 抓取模式。
+///
+/// - `Newest`：只抓每个目标的最新一页，用于秒回新评论（快速通道）。
+/// - `Full`：逐页补扫历史评论（完整通道），沿用原有的页数上限。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanMode {
+    Newest,
+    Full,
+}
+
+/// 完整通道每个目标最多扫描的页数。
+pub const FULL_SCAN_MAX_PAGES: u32 = 30;
+
+impl ScanMode {
+    /// 每个目标最多抓取的页数。
+    pub fn max_pages(self) -> u32 {
+        match self {
+            Self::Newest => 1,
+            Self::Full => FULL_SCAN_MAX_PAGES,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Newest => "\u{5feb}\u{901f}\u{901a}\u{9053}",
+            Self::Full => "\u{5b8c}\u{6574}\u{626b}\u{63cf}",
+        }
+    }
+
+    /// 快速通道只处理评论类来源，私信与关注仍按用户设置的间隔检查。
+    pub fn includes(self, source: MsgSource) -> bool {
+        match self {
+            Self::Newest => MsgSource::COMMENT_SOURCES.contains(&source),
+            Self::Full => true,
+        }
+    }
+}
+
 /// \u{6d88}\u{606f}\u{5904}\u{7406}\u{5668} trait
 #[async_trait]
 pub trait MessageHandler: Send + Sync {
@@ -32,6 +92,25 @@ pub trait MessageHandler: Send + Sync {
     fn source_type(&self) -> MsgSource;
 
     async fn fetch_messages(&self, account: &UserInfo) -> Result<Vec<Message>, String>;
+
+    /// 流式产出待处理消息。生产者与消费者并发运行，抓到第一条就能立刻回复，
+    /// 因此新评论不必等待整轮扫描结束。
+    ///
+    /// 默认实现退化为一次性抓取（私信、关注渠道行为不变），
+    /// 评论渠道会重写为按最新页优先边抓边发。
+    async fn stream_messages(
+        &self,
+        account: &UserInfo,
+        sink: &async_channel::Sender<Message>,
+        _mode: ScanMode,
+    ) -> Result<(), String> {
+        for message in self.fetch_messages(account).await? {
+            if sink.send(message).await.is_err() {
+                break;
+            }
+        }
+        Ok(())
+    }
 
     async fn send_reply(
         &self,
@@ -92,116 +171,59 @@ pub trait MessageHandler: Send + Sync {
         }
     }
 
+    /// 完整通道处理，等价于 `handle_in(.., ScanMode::Full)`。
     async fn handle(
         &self,
         account: &UserInfo,
         state: &AutoReplyState,
     ) -> Result<HandleResult, String> {
+        self.handle_in(account, state, ScanMode::Full).await
+    }
+
+    /// 边抓边回：生产者持续把新消息推进通道，消费者收到一条就立即处理一条。
+    ///
+    /// 首条回复只需要等待第一页抓取时间，不再等待整轮扫描结束。
+    async fn handle_in(
+        &self,
+        account: &UserInfo,
+        state: &AutoReplyState,
+        mode: ScanMode,
+    ) -> Result<HandleResult, String> {
         let settings = state.get_settings().await;
         let source = self.source_type();
         let default_channel = settings.channel(source).clone();
-        let messages = self.fetch_messages(account).await?;
+        let (sink, stream) = async_channel::bounded::<Message>(STREAM_BUFFER);
 
-        let mut result = HandleResult::default();
-        let message_count = messages.len();
-
-        for (index, message) in messages.into_iter().enumerate() {
-            let channel = effective_channel(&default_channel, &message.extra_data);
-            let event_key = format!("event:{}:{}:{}", account.uid, source.id(), message.id);
-            let user_key = format!("user:{}:{}:{}", account.uid, source.id(), message.user_id);
-
-            let already_replied_on_bilibili = message.extra_data["already_replied"]
-                .as_bool()
-                .unwrap_or(false);
-            let legacy_event_key = match source {
-                MsgSource::Comment => Some(format!("{}:{}", source.id(), message.id)),
-                MsgSource::Dynamic | MsgSource::DirectMessage | MsgSource::Follow => None,
-            };
-            let already_processed = state.is_replied(&event_key).await
-                || match legacy_event_key.as_deref() {
-                    Some(key) => state.is_replied(key).await,
-                    None => false,
-                };
-
-            if already_replied_on_bilibili || already_processed {
-                if already_replied_on_bilibili && !already_processed {
-                    let mut keys = vec![event_key.clone()];
-                    if channel.reply_policy == ReplyPolicy::OncePerUser {
-                        keys.push(user_key.clone());
-                    }
-                    state.mark_replied_many(keys).await;
-                }
-                self.like_comment_if_needed(account, &message, state, &mut result)
+        let producer = async {
+            let result = self.stream_messages(account, &sink, mode).await;
+            sink.close();
+            result
+        };
+        let consumer = async {
+            let mut result = HandleResult::default();
+            while let Ok(message) = stream.recv().await {
+                let outcome = self
+                    .reply_to_message(account, state, &default_channel, message, &mut result)
                     .await;
-                if result.stopped_by_rate_limit {
+                if outcome.stop {
                     break;
                 }
-                continue;
-            }
-
-            if channel.reply_policy == ReplyPolicy::OncePerUser {
-                let legacy_user_key = match source {
-                    MsgSource::DirectMessage | MsgSource::Follow => {
-                        Some(format!("{}:{}", source.id(), message.user_id))
-                    }
-                    MsgSource::Comment | MsgSource::Dynamic => None,
-                };
-                let replied_by_key = state.is_replied(&user_key).await
-                    || match legacy_user_key.as_deref() {
-                        Some(key) => state.is_replied(key).await,
-                        None => false,
-                    };
-                let replied_by_history = !matches!(source, MsgSource::Comment | MsgSource::Dynamic)
-                    && state
-                        .is_replied_in_history(&message.user_id, &message.user_name, &source)
-                        .await;
-
-                if replied_by_key || replied_by_history {
-                    log::info!(
-                        "已回复用户回查命中，跳过: source={}, user={}",
-                        source.id(),
-                        message.user_id
-                    );
-                    state
-                        .mark_replied_many(vec![event_key.clone(), user_key.clone()])
-                        .await;
-                    continue;
+                // 只有真正发出过写请求才节流：跳过已处理的消息不会拖慢快速通道。
+                if outcome.acted {
+                    processing_delay().await;
                 }
             }
+            // 命中风控提前停止时关闭接收端，生产者会随之结束，不再继续请求接口。
+            stream.close();
+            result
+        };
 
-            let reply_text = format_message(&channel.message, &message.user_name);
+        let (stream_result, result) = tokio::join!(producer, consumer);
 
-            match self.send_reply(account, &message, &reply_text).await {
-                Ok(_) => {
-                    let mut keys = vec![event_key];
-                    if channel.reply_policy == ReplyPolicy::OncePerUser {
-                        keys.push(user_key);
-                    }
-                    state.mark_replied_many(keys).await;
-                    state
-                        .add_history(message.user_name.clone(), reply_text, source)
-                        .await;
-                    result.success_count += 1;
-
-                    self.like_comment_if_needed(account, &message, state, &mut result)
-                        .await;
-                    if result.stopped_by_rate_limit {
-                        break;
-                    }
-                }
-                Err(e) => {
-                    log::error!("{}\u{56de}\u{590d}\u{5931}\u{8d25}: {}", self.name(), e);
-                    result.error_count += 1;
-
-                    if is_rate_limit_error(&e) {
-                        result.stopped_by_rate_limit = true;
-                        break;
-                    }
-                }
-            }
-
-            if index + 1 < message_count {
-                processing_delay().await;
+        if let Err(error) = stream_result {
+            log::warn!("{}抓取中断: {}", self.name(), error);
+            if result.success_count == 0 && result.error_count == 0 {
+                return Err(error);
             }
         }
 
@@ -213,22 +235,158 @@ pub trait MessageHandler: Send + Sync {
         account: &UserInfo,
         state: &AutoReplyState,
     ) -> Result<HandleResult, String> {
-        let messages = self.fetch_messages(account).await?;
-        let mut result = HandleResult::default();
-        let message_count = messages.len();
+        self.handle_likes_only_in(account, state, ScanMode::Full)
+            .await
+    }
 
-        for (index, message) in messages.into_iter().enumerate() {
-            self.like_comment_if_needed(account, &message, state, &mut result)
-                .await;
-            if result.stopped_by_rate_limit {
-                break;
+    /// 只点赞的处理同样边抓边做，判断规则与完整通道保持一致。
+    async fn handle_likes_only_in(
+        &self,
+        account: &UserInfo,
+        state: &AutoReplyState,
+        mode: ScanMode,
+    ) -> Result<HandleResult, String> {
+        let (sink, stream) = async_channel::bounded::<Message>(STREAM_BUFFER);
+
+        let producer = async {
+            let result = self.stream_messages(account, &sink, mode).await;
+            sink.close();
+            result
+        };
+        let consumer = async {
+            let mut result = HandleResult::default();
+            while let Ok(message) = stream.recv().await {
+                let likes_before = result.like_success_count + result.like_error_count;
+                self.like_comment_if_needed(account, &message, state, &mut result)
+                    .await;
+                if result.stopped_by_rate_limit {
+                    break;
+                }
+                if result.like_success_count + result.like_error_count > likes_before {
+                    processing_delay().await;
+                }
             }
-            if index + 1 < message_count {
-                processing_delay().await;
-            }
+            stream.close();
+            result
+        };
+
+        let (stream_result, result) = tokio::join!(producer, consumer);
+
+        if let Err(error) = stream_result {
+            log::warn!("{}抓取中断: {}", self.name(), error);
         }
 
         Ok(result)
+    }
+
+    /// 处理单条消息。
+    async fn reply_to_message(
+        &self,
+        account: &UserInfo,
+        state: &AutoReplyState,
+        default_channel: &ChannelReplySettings,
+        message: Message,
+        result: &mut HandleResult,
+    ) -> MessageOutcome {
+        let source = self.source_type();
+        let channel = effective_channel(default_channel, &message.extra_data);
+        let event_key = format!("event:{}:{}:{}", account.uid, source.id(), message.id);
+        let user_key = format!("user:{}:{}:{}", account.uid, source.id(), message.user_id);
+
+        let already_replied_on_bilibili = message.extra_data["already_replied"]
+            .as_bool()
+            .unwrap_or(false);
+        let legacy_event_key = match source {
+            MsgSource::Comment => Some(format!("{}:{}", source.id(), message.id)),
+            MsgSource::Dynamic | MsgSource::DirectMessage | MsgSource::Follow => None,
+        };
+        let already_processed = state.is_replied(&event_key).await
+            || match legacy_event_key.as_deref() {
+                Some(key) => state.is_replied(key).await,
+                None => false,
+            };
+
+        if already_replied_on_bilibili || already_processed {
+            if already_replied_on_bilibili && !already_processed {
+                let mut keys = vec![event_key.clone()];
+                if channel.reply_policy == ReplyPolicy::OncePerUser {
+                    keys.push(user_key.clone());
+                }
+                state.mark_replied_many(keys).await;
+            }
+            let likes_before = result.like_success_count + result.like_error_count;
+            self.like_comment_if_needed(account, &message, state, result)
+                .await;
+            return MessageOutcome {
+                stop: result.stopped_by_rate_limit,
+                acted: result.like_success_count + result.like_error_count > likes_before,
+            };
+        }
+
+        if channel.reply_policy == ReplyPolicy::OncePerUser {
+            let legacy_user_key = match source {
+                MsgSource::DirectMessage | MsgSource::Follow => {
+                    Some(format!("{}:{}", source.id(), message.user_id))
+                }
+                MsgSource::Comment | MsgSource::Dynamic => None,
+            };
+            let replied_by_key = state.is_replied(&user_key).await
+                || match legacy_user_key.as_deref() {
+                    Some(key) => state.is_replied(key).await,
+                    None => false,
+                };
+            let replied_by_history = !matches!(source, MsgSource::Comment | MsgSource::Dynamic)
+                && state
+                    .is_replied_in_history(&message.user_id, &message.user_name, &source)
+                    .await;
+
+            if replied_by_key || replied_by_history {
+                log::info!(
+                    "已回复用户回查命中，跳过: source={}, user={}",
+                    source.id(),
+                    message.user_id
+                );
+                state
+                    .mark_replied_many(vec![event_key.clone(), user_key.clone()])
+                    .await;
+                return MessageOutcome::skipped();
+            }
+        }
+
+        let reply_text = format_message(&channel.message, &message.user_name);
+
+        match self.send_reply(account, &message, &reply_text).await {
+            Ok(_) => {
+                let mut keys = vec![event_key];
+                if channel.reply_policy == ReplyPolicy::OncePerUser {
+                    keys.push(user_key);
+                }
+                state.mark_replied_many(keys).await;
+                state
+                    .add_history(message.user_name.clone(), reply_text, source)
+                    .await;
+                result.success_count += 1;
+
+                self.like_comment_if_needed(account, &message, state, result)
+                    .await;
+                MessageOutcome {
+                    stop: result.stopped_by_rate_limit,
+                    acted: true,
+                }
+            }
+            Err(e) => {
+                log::error!("{}回复失败: {}", self.name(), e);
+                result.error_count += 1;
+
+                if is_rate_limit_error(&e) {
+                    result.stopped_by_rate_limit = true;
+                }
+                MessageOutcome {
+                    stop: result.stopped_by_rate_limit,
+                    acted: true,
+                }
+            }
+        }
     }
 }
 
@@ -331,7 +489,7 @@ mod tests {
     use crate::auto_reply::state::AutoReplyState;
     use crate::bilibili::UserInfo;
     use std::sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     };
 
@@ -669,6 +827,135 @@ mod tests {
         assert_eq!(0, sent.load(Ordering::SeqCst));
         assert!(state.is_replied("event:1:dm:message-key-1").await);
         assert!(state.is_replied("user:1:dm:2").await);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn newest_mode_only_covers_comment_sources() {
+        assert_eq!(1, ScanMode::Newest.max_pages());
+        assert_eq!(FULL_SCAN_MAX_PAGES, ScanMode::Full.max_pages());
+        assert!(ScanMode::Newest.includes(MsgSource::Comment));
+        assert!(ScanMode::Newest.includes(MsgSource::Dynamic));
+        assert!(!ScanMode::Newest.includes(MsgSource::DirectMessage));
+        assert!(!ScanMode::Newest.includes(MsgSource::Follow));
+        assert!(ScanMode::Full.includes(MsgSource::DirectMessage));
+        assert!(ScanMode::Full.includes(MsgSource::Follow));
+    }
+
+    /// 推送第一条后等待消费者回复，再推送第二条。
+    /// 如果实现仍是"先抓完再统一回复"，这里的等待会超时，`replied_while_streaming` 保持 false。
+    struct StreamingCommentHandler {
+        replied: Arc<AtomicUsize>,
+        sent: Arc<AtomicUsize>,
+        replied_while_streaming: Arc<AtomicBool>,
+    }
+
+    #[async_trait]
+    impl MessageHandler for StreamingCommentHandler {
+        fn name(&self) -> &'static str {
+            "streaming"
+        }
+
+        fn source_type(&self) -> MsgSource {
+            MsgSource::Comment
+        }
+
+        async fn fetch_messages(&self, _account: &UserInfo) -> Result<Vec<Message>, String> {
+            Err("流式通道不应该退化为一次性抓取".to_string())
+        }
+
+        async fn send_reply(
+            &self,
+            _account: &UserInfo,
+            _message: &Message,
+            _reply_msg: &str,
+        ) -> Result<(), String> {
+            self.sent.fetch_add(1, Ordering::SeqCst);
+            self.replied.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+
+        async fn stream_messages(
+            &self,
+            _account: &UserInfo,
+            sink: &async_channel::Sender<Message>,
+            _mode: ScanMode,
+        ) -> Result<(), String> {
+            sink.send(comment_message("stream-1", false))
+                .await
+                .map_err(|e| e.to_string())?;
+
+            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+            while self.replied.load(Ordering::SeqCst) == 0 {
+                if tokio::time::Instant::now() >= deadline {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+            if self.replied.load(Ordering::SeqCst) > 0 {
+                self.replied_while_streaming.store(true, Ordering::SeqCst);
+            }
+
+            sink.send(comment_message("stream-2", false))
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn replies_before_the_stream_finishes() {
+        let data_dir = temp_data_dir("streaming-replies");
+        let state = AutoReplyState::new_for_test(data_dir.clone()).unwrap();
+
+        let replied = Arc::new(AtomicUsize::new(0));
+        let sent = Arc::new(AtomicUsize::new(0));
+        let replied_while_streaming = Arc::new(AtomicBool::new(false));
+        let handler = StreamingCommentHandler {
+            replied: Arc::clone(&replied),
+            sent: Arc::clone(&sent),
+            replied_while_streaming: Arc::clone(&replied_while_streaming),
+        };
+
+        handler.handle(&test_account(), &state).await.unwrap();
+
+        assert!(
+            replied_while_streaming.load(Ordering::SeqCst),
+            "第二条消息推送前，第一条回复就应该已经发出"
+        );
+        assert_eq!(2, sent.load(Ordering::SeqCst));
+        assert!(state.is_replied("event:1:c:stream-1").await);
+        assert!(state.is_replied("event:1:c:stream-2").await);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[tokio::test]
+    async fn likes_only_streams_through_the_same_channel() {
+        let data_dir = temp_data_dir("streaming-likes");
+        let state = AutoReplyState::new_for_test(data_dir.clone()).unwrap();
+        state
+            .update_settings(|settings| {
+                settings.channels.comment.like_comments = true;
+            })
+            .await
+            .unwrap();
+
+        let liked = Arc::new(AtomicUsize::new(0));
+        let handler = MockCommentHandler {
+            source: MsgSource::Comment,
+            liked: Arc::clone(&liked),
+            messages: vec![
+                comment_message("like-1", false),
+                comment_message("like-2", false),
+            ],
+        };
+
+        handler
+            .handle_likes_only_in(&test_account(), &state, ScanMode::Newest)
+            .await
+            .unwrap();
+
+        assert_eq!(2, liked.load(Ordering::SeqCst));
         let _ = std::fs::remove_dir_all(data_dir);
     }
 }

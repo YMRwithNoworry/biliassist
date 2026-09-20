@@ -1,4 +1,4 @@
-use super::handler::{Message, MessageHandler};
+use super::handler::{Message, MessageHandler, ScanMode};
 use super::http::{extract_csrf, get_http_client, resp_to_json};
 use super::models::{ChannelReplySettings, MsgSource};
 use super::state::{get_global_state, AutoReplyState};
@@ -12,9 +12,22 @@ use tokio::sync::Mutex;
 
 const ACCEPT_JSON: &str = "application/json, text/plain, */*";
 const WBI_CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
+/// 快速通道每个目标允许额外翻页抓取的子评论线程数上限。
+const NEWEST_SUB_COMMENT_BUDGET: usize = 10;
 
 type WbiKeys = (String, String);
 type WbiCacheEntry = (WbiKeys, Instant);
+
+/// 扫描细节日志：完整通道按 info 输出，快速通道每几秒就跑一次，降为 debug 避免刷屏。
+macro_rules! scan_log {
+    ($mode:expr, $($arg:tt)*) => {
+        if $mode == ScanMode::Full {
+            log::info!($($arg)*);
+        } else {
+            log::debug!($($arg)*);
+        }
+    };
+}
 
 #[derive(Debug, Clone, Copy)]
 enum CommentKind {
@@ -549,14 +562,25 @@ impl CommentHandler {
         Ok(comments)
     }
 
+    /// 该线程的子评论是否超出接口内嵌的数量，超出才需要额外翻页抓取。
+    fn needs_sub_comment_pages(root: &serde_json::Value) -> bool {
+        let embedded = Self::embedded_sub_comments(root);
+        let expected = Self::value_as_u64(&root["rcount"]).unwrap_or(embedded.len() as u64);
+        expected > embedded.len() as u64
+    }
+
     async fn messages_for_thread(
         &self,
         account: &UserInfo,
         target: &CommentTarget,
         root: &serde_json::Value,
         my_mid: i64,
+        allow_sub_pages: bool,
     ) -> Vec<Message> {
         let embedded = Self::embedded_sub_comments(root);
+        if !allow_sub_pages {
+            return Self::thread_messages(target, root, &embedded, my_mid);
+        }
         let sub_comments = match self.get_sub_comments(account, target, root).await {
             Ok(comments) => comments,
             Err(error) => {
@@ -572,23 +596,45 @@ impl CommentHandler {
         Self::thread_messages(target, root, &sub_comments, my_mid)
     }
 
-    async fn get_comments(
+    /// 抓取单个目标的评论并即时推送，返回推送的消息数。
+    ///
+    /// WBI 游标接口返回空或失败时降级到旧分页接口，保持原有的兜底逻辑。
+    async fn stream_target(
         &self,
         account: &UserInfo,
         target: &CommentTarget,
         my_mid: i64,
-    ) -> Result<Vec<Message>, String> {
-        log::info!("获取{} oid={} 的评论", target.label, target.oid);
+        mode: ScanMode,
+        sink: &async_channel::Sender<Message>,
+    ) -> Result<usize, String> {
+        scan_log!(
+            mode,
+            "获取{} oid={} 的评论（{}）",
+            target.label,
+            target.oid,
+            mode.label()
+        );
+
+        // 快速通道限制每个目标额外翻页抓子评论的次数；完整通道不受限制。
+        let mut sub_page_budget = NEWEST_SUB_COMMENT_BUDGET;
 
         if let Ok(wbi_keys) = self.ensure_wbi_keys(account).await {
             match self
-                .get_comments_cursor(account, target, my_mid, &wbi_keys)
+                .stream_cursor(
+                    account,
+                    target,
+                    my_mid,
+                    &wbi_keys,
+                    mode,
+                    &mut sub_page_budget,
+                    sink,
+                )
                 .await
             {
-                Ok(messages) => {
-                    if !messages.is_empty() {
-                        log::info!("oid={} 找到 {} 条未回复评论", target.oid, messages.len());
-                        return Ok(messages);
+                Ok(sent) if sent > 0 => return Ok(sent),
+                Ok(_) => {
+                    if sink.is_closed() {
+                        return Ok(0);
                     }
                     // 部分账号下 WBI 接口会错误地返回空列表，需用旧接口补抓。
                     log::warn!("oid={} WBI接口返回空评论，降级到旧分页接口", target.oid);
@@ -597,7 +643,11 @@ impl CommentHandler {
             }
         }
 
-        self.get_comments_pn(account, target, my_mid).await
+        if sink.is_closed() {
+            return Ok(0);
+        }
+        self.stream_pn(account, target, my_mid, mode, &mut sub_page_budget, sink)
+            .await
     }
 
     async fn fetch_json(
@@ -644,18 +694,79 @@ impl CommentHandler {
         result
     }
 
-    async fn get_comments_cursor(
+    /// 把一页评论（含其子评论）展开成消息并逐条推入通道。
+    ///
+    /// 快速通道对"子评论翻页"设有预算：只有内嵌子评论不够、且预算未用完的线程
+    /// 才会额外请求，避免热门视频在秒级检查里打出过多请求。
+    ///
+    /// 返回（推送的消息数，其中已回复条数，是否因通道关闭而中断）。
+    async fn stream_replies(
+        &self,
+        account: &UserInfo,
+        target: &CommentTarget,
+        replies: &[serde_json::Value],
+        my_mid: i64,
+        mode: ScanMode,
+        sub_page_budget: &mut usize,
+        sink: &async_channel::Sender<Message>,
+    ) -> (usize, usize, bool) {
+        let mut pushed = 0usize;
+        let mut filtered = 0usize;
+
+        for reply in replies {
+            if sink.is_closed() {
+                return (pushed, filtered, true);
+            }
+
+            let mut allow_sub_pages = true;
+            if mode == ScanMode::Newest && Self::needs_sub_comment_pages(reply) {
+                if *sub_page_budget == 0 {
+                    allow_sub_pages = false;
+                } else {
+                    *sub_page_budget -= 1;
+                }
+            }
+
+            for message in self
+                .messages_for_thread(account, target, reply, my_mid, allow_sub_pages)
+                .await
+            {
+                let already_replied = message.extra_data["already_replied"]
+                    .as_bool()
+                    .unwrap_or(false);
+                if sink.send(message).await.is_err() {
+                    return (pushed, filtered, true);
+                }
+                pushed += 1;
+                if already_replied {
+                    filtered += 1;
+                }
+            }
+        }
+
+        (pushed, filtered, false)
+    }
+
+    /// WBI 游标接口。快速通道只抓最新一页，完整通道按上限逐页补扫，
+    /// 两种模式都是抓到一页就立刻推送。
+    async fn stream_cursor(
         &self,
         account: &UserInfo,
         target: &CommentTarget,
         my_mid: i64,
         keys: &WbiKeys,
-    ) -> Result<Vec<Message>, String> {
-        let mut messages = Vec::new();
+        mode: ScanMode,
+        sub_page_budget: &mut usize,
+        sink: &async_channel::Sender<Message>,
+    ) -> Result<usize, String> {
         let (ref img_key, ref sub_key) = keys;
         let mut next: i64 = 0;
+        let mut sent = 0usize;
 
-        for page in 0..30u32 {
+        for page in 0..mode.max_pages() {
+            if sink.is_closed() {
+                break;
+            }
             let mut params = vec![
                 ("type".to_string(), target.reply_type.to_string()),
                 ("oid".to_string(), target.oid.to_string()),
@@ -674,8 +785,16 @@ impl CommentHandler {
                 .await?;
 
             if json["code"] != 0 {
-                log::info!("评论API code={}, msg={}", json["code"], json["message"]);
-                if messages.is_empty() {
+                scan_log!(
+                    mode,
+                    "评论API code={}, msg={}",
+                    json["code"],
+                    json["message"]
+                );
+                if sent == 0 {
+                    if sink.is_closed() {
+                        return Ok(0);
+                    }
                     return Err(format!(
                         "评论API code={}, msg={}",
                         json["code"], json["message"]
@@ -689,37 +808,35 @@ impl CommentHandler {
                 .map(|a| a.to_vec())
                 .unwrap_or_default();
             let count = replies.len();
-            log::info!("oid={} 游标第{}页: {}条", target.oid, page, count);
+            scan_log!(mode, "oid={} 游标第{}页: {}条", target.oid, page, count);
             if count == 0 {
                 break;
             }
 
-            let mut filtered = 0u32;
-            let mut added = 0usize;
-            for reply in &replies {
-                let thread_messages = self
-                    .messages_for_thread(account, target, reply, my_mid)
-                    .await;
-                let thread_filtered = thread_messages
-                    .iter()
-                    .filter(|message| {
-                        message.extra_data["already_replied"]
-                            .as_bool()
-                            .unwrap_or(false)
-                    })
-                    .count();
-                filtered += thread_filtered as u32;
-                added += thread_messages.len().saturating_sub(thread_filtered);
-                messages.extend(thread_messages);
-            }
-            log::info!(
+            let (pushed, filtered, closed) = self
+                .stream_replies(
+                    account,
+                    target,
+                    &replies,
+                    my_mid,
+                    mode,
+                    sub_page_budget,
+                    sink,
+                )
+                .await;
+            sent += pushed;
+            scan_log!(
+                mode,
                 "oid={} 第{}页: {}个评论线程, {}条待处理, {}条已回复",
                 target.oid,
                 page,
                 count,
-                added,
+                pushed - filtered,
                 filtered
             );
+            if closed {
+                break;
+            }
 
             if json["data"]["cursor"]["is_end"].as_bool().unwrap_or(true) {
                 break;
@@ -731,23 +848,25 @@ impl CommentHandler {
             tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         }
 
-        log::info!(
-            "oid={} 游标API共找到 {} 条未回复评论",
-            target.oid,
-            messages.len()
-        );
-        Ok(messages)
+        Ok(sent)
     }
 
-    async fn get_comments_pn(
+    /// 旧分页接口兜底，同样边抓边发。
+    async fn stream_pn(
         &self,
         account: &UserInfo,
         target: &CommentTarget,
         my_mid: i64,
-    ) -> Result<Vec<Message>, String> {
-        let mut messages = Vec::new();
+        mode: ScanMode,
+        sub_page_budget: &mut usize,
+        sink: &async_channel::Sender<Message>,
+    ) -> Result<usize, String> {
+        let mut sent = 0usize;
 
-        for pn in 1..=30u32 {
+        for pn in 1..=mode.max_pages() {
+            if sink.is_closed() {
+                break;
+            }
             let oid_s = target.oid.to_string();
             let reply_type_s = target.reply_type.to_string();
             let pn_s = pn.to_string();
@@ -769,6 +888,13 @@ impl CommentHandler {
                 .await?;
 
             if json["code"] != 0 {
+                scan_log!(
+                    mode,
+                    "oid={} 分页API code={}, msg={}",
+                    target.oid,
+                    json["code"],
+                    json["message"]
+                );
                 break;
             }
 
@@ -780,32 +906,30 @@ impl CommentHandler {
                 break;
             }
 
-            let mut filtered = 0u32;
-            let mut added = 0usize;
-            for reply in &replies {
-                let thread_messages = self
-                    .messages_for_thread(account, target, reply, my_mid)
-                    .await;
-                let thread_filtered = thread_messages
-                    .iter()
-                    .filter(|message| {
-                        message.extra_data["already_replied"]
-                            .as_bool()
-                            .unwrap_or(false)
-                    })
-                    .count();
-                filtered += thread_filtered as u32;
-                added += thread_messages.len().saturating_sub(thread_filtered);
-                messages.extend(thread_messages);
-            }
-            if filtered > 0 || added > 0 {
-                log::debug!(
+            let (pushed, filtered, closed) = self
+                .stream_replies(
+                    account,
+                    target,
+                    &replies,
+                    my_mid,
+                    mode,
+                    sub_page_budget,
+                    sink,
+                )
+                .await;
+            sent += pushed;
+            if pushed > 0 {
+                scan_log!(
+                    mode,
                     "oid={} pn第{}页: {}条待处理, {}条已回复",
                     target.oid,
                     pn,
-                    added,
+                    pushed - filtered,
                     filtered
                 );
+            }
+            if closed {
+                break;
             }
 
             let count = json["data"]["page"]["count"].as_u64().unwrap_or(0);
@@ -815,7 +939,7 @@ impl CommentHandler {
             tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         }
 
-        Ok(messages)
+        Ok(sent)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -968,31 +1092,8 @@ impl CommentHandler {
         log::info!("已点赞评论 rpid={}", rpid);
         Ok(())
     }
-}
-
-impl Default for CommentHandler {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl MessageHandler for CommentHandler {
-    fn name(&self) -> &'static str {
-        match self.kind {
-            CommentKind::Video => "视频评论处理器",
-            CommentKind::Dynamic => "动态评论处理器",
-        }
-    }
-
-    fn source_type(&self) -> MsgSource {
-        match self.kind {
-            CommentKind::Video => MsgSource::Comment,
-            CommentKind::Dynamic => MsgSource::Dynamic,
-        }
-    }
-
-    async fn fetch_messages(&self, account: &UserInfo) -> Result<Vec<Message>, String> {
+    /// 组装本轮要检查的评论目标（自己的视频或动态，以及用户指定的 BV 视频）。
+    async fn comment_targets(&self, account: &UserInfo) -> Result<Vec<CommentTarget>, String> {
         let targets: Vec<CommentTarget> = match self.kind {
             CommentKind::Video => {
                 let settings = get_global_state().get_settings().await;
@@ -1063,45 +1164,109 @@ impl MessageHandler for CommentHandler {
                 })
                 .collect(),
         };
-        log::info!("共获取到 {} 个{}，开始检查评论", targets.len(), self.name());
+
+        Ok(targets)
+    }
+}
+
+impl Default for CommentHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl MessageHandler for CommentHandler {
+    fn name(&self) -> &'static str {
+        match self.kind {
+            CommentKind::Video => "视频评论处理器",
+            CommentKind::Dynamic => "动态评论处理器",
+        }
+    }
+
+    fn source_type(&self) -> MsgSource {
+        match self.kind {
+            CommentKind::Video => MsgSource::Comment,
+            CommentKind::Dynamic => MsgSource::Dynamic,
+        }
+    }
+
+    /// 兼容接口：把流式结果收集成列表（测试与"只点赞"以外的调用方使用）。
+    async fn fetch_messages(&self, account: &UserInfo) -> Result<Vec<Message>, String> {
+        let (sink, stream) = async_channel::unbounded::<Message>();
+        let result = self.stream_messages(account, &sink, ScanMode::Full).await;
+        sink.close();
+
+        let mut messages = Vec::new();
+        while let Ok(message) = stream.recv().await {
+            messages.push(message);
+        }
+
+        result.map(|_| messages)
+    }
+
+    /// 边抓边发：每抓到一个目标的一页评论就立刻推进通道，
+    /// 上层因此可以在第一页抓完后就发出回复，不必等待整轮扫描。
+    async fn stream_messages(
+        &self,
+        account: &UserInfo,
+        sink: &async_channel::Sender<Message>,
+        mode: ScanMode,
+    ) -> Result<(), String> {
+        let targets = self.comment_targets(account).await?;
+        scan_log!(
+            mode,
+            "共获取到 {} 个{}，开始检查评论（{}）",
+            targets.len(),
+            self.name(),
+            mode.label()
+        );
         if targets.is_empty() {
-            return Ok(Vec::new());
+            return Ok(());
         }
 
         let my_mid = account.uid.parse::<i64>().unwrap_or(0);
-        let mut all = Vec::new();
-        // 每轮最多处理当前渠道最近10个目标，避免扫描时间过长。
-        let max_targets = targets.len();
+        let target_count = targets.len();
         let mut processed = 0u32;
+        let mut total = 0usize;
 
-        for (index, target) in targets[..max_targets].iter().enumerate() {
-            match self.get_comments(account, target, my_mid).await {
-                Ok(msgs) => {
-                    if !msgs.is_empty() {
-                        log::info!(
+        for (index, target) in targets.iter().enumerate() {
+            if sink.is_closed() {
+                break;
+            }
+            match self
+                .stream_target(account, target, my_mid, mode, sink)
+                .await
+            {
+                Ok(count) => {
+                    if count > 0 {
+                        scan_log!(
+                            mode,
                             "{} oid={} 有 {} 条未回复评论",
                             target.label,
                             target.oid,
-                            msgs.len()
+                            count
                         );
                     }
-                    all.extend(msgs);
+                    total += count;
                     processed += 1;
                 }
                 Err(e) => log::warn!("获取{} oid={} 评论失败: {}", target.label, target.oid, e),
             }
-            if index + 1 < max_targets {
+            if index + 1 < target_count {
                 // 请求之间保留短暂间隔，避免连续访问触发风控。
                 tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
             }
         }
 
-        log::info!(
-            "本轮处理了 {} 个评论目标，共计 {} 条未回复评论",
+        scan_log!(
+            mode,
+            "{}检查了 {} 个评论目标，本轮共 {} 条未回复评论",
+            mode.label(),
             processed,
-            all.len()
+            total
         );
-        Ok(all)
+        Ok(())
     }
 
     async fn send_reply(
