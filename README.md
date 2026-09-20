@@ -1,6 +1,6 @@
 # BiliAssist
 
-BiliAssist 是使用 Rust、GPUI 和 [gpui-component](https://github.com/longbridge/gpui-component) 构建的 B站账号管理与自动回复原生桌面应用。界面直接由 GPU 渲染，不依赖浏览器 WebView、Vue 或 Tauri。
+BiliAssist 是使用 Rust、GPUI 和 [gpui-kit](https://github.com/longbridge/gpui-kit)（内含 gpui-component 组件库）构建的 B站账号管理与自动回复原生桌面应用。界面直接由 GPU 渲染，不依赖浏览器 WebView、Vue 或 Tauri。
 
 ## 功能
 
@@ -16,7 +16,7 @@ BiliAssist 是使用 Rust、GPUI 和 [gpui-component](https://github.com/longbri
 
 ## 技术栈
 
-- 原生界面：GPUI + gpui-component
+- 原生界面：GPUI + gpui-kit（gpui-component 组件库）
 - 异步运行时：Tokio
 - 网络：reqwest
 - 本地存储：AES-256-GCM

@@ -1,5 +1,5 @@
 use auto_launch::AutoLaunchBuilder;
-use gpui::{App, Window};
+use gpui_kit::{App, Window};
 use std::path::PathBuf;
 
 #[cfg(target_os = "windows")]

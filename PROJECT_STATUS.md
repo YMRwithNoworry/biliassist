@@ -2,7 +2,7 @@
 
 ## 已完成
 
-- [x] 使用 GPUI 和 gpui-component 重写原生桌面界面
+- [x] 使用 GPUI 和 gpui-kit（gpui-component 组件库）重写原生桌面界面
 - [x] 移除 Vue、Vite、Tauri 和 WebView 运行时
 - [x] Supabase 邮箱密码与邮件验证码认证
 - [x] B站二维码登录和多账号加密管理
@@ -19,7 +19,7 @@
 ## 技术栈
 
 - Rust 2021
-- GPUI / gpui-component
+- GPUI (gpui-pre) / gpui-kit 0.6.4（gpui-component）
 - Tokio / reqwest
 - Serde
 - AES-256-GCM

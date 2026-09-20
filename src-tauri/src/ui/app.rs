@@ -9,12 +9,7 @@ use crate::bilibili;
 use crate::runtime;
 use crate::storage::{self, Account};
 use base64::Engine as _;
-use gpui::prelude::FluentBuilder;
-use gpui::{
-    div, img, px, AnyElement, App, AppContext, Context, Entity, FocusHandle, Focusable, Image,
-    ImageFormat, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window,
-};
-use gpui_component::{
+use gpui_kit::component::{
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputState, NumberInput, Textarea, TextareaState},
@@ -22,6 +17,11 @@ use gpui_component::{
     switch::Switch,
     tab::{Tab, TabBar},
     v_flex, ActiveTheme, Disableable, Icon, IconName, Sizable, StyledExt,
+};
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::{
+    div, img, px, AnyElement, App, AppContext, Context, Entity, FocusHandle, Focusable, Image,
+    ImageFormat, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window,
 };
 use std::future::Future;
 use std::sync::Arc;

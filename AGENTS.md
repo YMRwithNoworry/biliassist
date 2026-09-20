@@ -2,11 +2,12 @@
 
 ## 项目概览
 
-BiliAssist 是使用 Rust、GPUI 和 gpui-component 构建的 B站账号管理原生桌面应用，界面语言为中文。
+BiliAssist 是使用 Rust、GPUI 和 gpui-kit 构建的 B站账号管理原生桌面应用，界面语言为中文。
 
 ## 技术栈
 
-- 界面：GPUI + gpui-component
+- 界面：GPUI + gpui-kit（内含 gpui-component 组件库）
+- 依赖：gpui-kit = "0.6.4"（crates.io），它统一提供 GPUI（gpui-pre）、gpui-base、gpui-component 和默认图标资源，不再使用 git 依赖
 - 异步：Tokio
 - 网络：reqwest
 - 应用认证：Supabase Auth

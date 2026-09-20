@@ -1,6 +1,6 @@
 use super::platform;
 use anyhow::{anyhow, Context as _};
-use gpui::{AnyWindowHandle, AsyncApp};
+use gpui_kit::{AnyWindowHandle, AsyncApp};
 use std::time::Duration;
 use tray_icon::{
     menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem},

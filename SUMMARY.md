@@ -1,6 +1,6 @@
 # 项目摘要
 
-BiliAssist 是纯 Rust 原生桌面应用。GPUI 负责窗口与渲染，gpui-component 提供输入框、按钮、开关、标签页和滚动容器；Tokio 后台服务持续处理 B站事件。
+BiliAssist 是纯 Rust 原生桌面应用。GPUI 负责窗口与渲染，gpui-kit（含 gpui-component 组件库）提供输入框、按钮、开关、标签页和滚动容器；Tokio 后台服务持续处理 B站事件。
 
 应用包含两层账号：
 
