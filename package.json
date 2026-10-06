@@ -1,6 +1,6 @@
 {
   "name": "bilibili-account-manager",
-  "version": "0.12.2",
+  "version": "0.13.0",
   "description": "基于 Tauri 2 与 React 的 B站账号管理和自动回复桌面应用",
   "private": true,
   "type": "module",
