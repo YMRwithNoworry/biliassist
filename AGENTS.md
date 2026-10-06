@@ -45,6 +45,14 @@ tauri-build 会把 dist/ 内嵌进二进制，因此改完前端必须先 `npm r
 
 新增后端能力时先在 commands.rs 暴露命令，再在 src/lib/ipc.ts 补上类型化封装，界面层不直接调用 `invoke`。
 
+## 主题
+
+- 主题状态在 src/state/theme.tsx，支持 light / dark / system，默认跟随系统，选择写入 localStorage 的 biliassist-theme。
+- index.html 里有一段内联脚本，在首屏渲染前就把 <html data-theme> 设好，避免夜间模式刷新时闪一帧白屏。
+- 颜色只能通过 src/styles/base.css 的语义变量引用：浅色值写在 :root，夜间值写在 [data-theme='dark']，两处必须成对维护。
+- 组件样式里不要出现写死的颜色，否则夜间模式下会漏色；彩色底上的文字用 --accent-contrast，不要用 --surface-white。
+- 切换按钮是 src/components/ThemeToggle.tsx，出现在侧边栏底部和登录页右上角。
+
 ## 自动回复
 
 - MsgSource 包含 Comment、Dynamic、DirectMessage 和 Follow。

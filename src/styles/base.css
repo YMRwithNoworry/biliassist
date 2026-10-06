@@ -45,9 +45,68 @@
   --danger: #c13515;
   --danger-tint: #fdf0ed;
   --info: #0b6bcb;
+  --info: #0b6bcb;
   --info-tint: #eaf3fd;
+
+  /* 主题补充令牌：语义色描边、遮罩、阴影与彩色底上的文字色 */
+  --accent-contrast: #ffffff;
+  --toggle-knob: #ffffff;
+  --hairline-strong: rgba(0, 0, 0, 0.12);
+  --overlay: rgba(0, 0, 0, 0.45);
+  --knob-shadow: rgba(0, 0, 0, 0.15) 0px 1px 3px;
+  --shadow-dialog: 0 16px 40px rgba(0, 0, 0, 0.22);
+  --danger-soft: #fff0f3;
+  --success-border: rgba(15, 123, 63, 0.25);
+  --warning-border: rgba(154, 100, 0, 0.25);
+  --danger-border: rgba(200, 16, 63, 0.25);
+  --info-border: rgba(11, 107, 203, 0.25);
+
+  color-scheme: light;
 }
 
+
+/* ===== 夜间模式：只替换语义变量，组件规则保持不变 ===== */
+[data-theme='dark'] {
+  /* 品牌色不随主题变化，白字红底按钮在两种主题下观感一致 */
+  --text-primary: #eceef2;
+  --text-secondary: #9aa1ad;
+  --text-disabled: rgba(255, 255, 255, 0.3);
+
+  /* 深色下 --surface-white 仍是「比内容区更亮的表面」：卡片与侧边栏 */
+  --surface-white: #1b1e24;
+  --surface-light: #121419;
+  --surface-border: #2c313a;
+
+  /* 第一层阴影在浅色下充当发丝描边，深色下必须换成浅色描边才看得见 */
+  --shadow-card: rgba(255, 255, 255, 0.06) 0px 0px 0px 1px,
+    rgba(0, 0, 0, 0.5) 0px 2px 6px,
+    rgba(0, 0, 0, 0.38) 0px 4px 8px;
+  --shadow-hover: rgba(0, 0, 0, 0.55) 0px 4px 12px;
+  --shadow-focus: rgb(18, 20, 25) 0px 0px 0px 4px;
+
+  --success: #4ec97f;
+  --success-tint: rgba(78, 201, 127, 0.14);
+  --warning: #e0a63c;
+  --warning-tint: rgba(224, 166, 60, 0.14);
+  --danger: #ff7a66;
+  --danger-tint: rgba(255, 122, 102, 0.14);
+  --info: #6cb6ff;
+  --info-tint: rgba(108, 182, 255, 0.14);
+
+  --success-border: rgba(78, 201, 127, 0.32);
+  --warning-border: rgba(224, 166, 60, 0.32);
+  --danger-border: rgba(255, 122, 102, 0.32);
+  --info-border: rgba(108, 182, 255, 0.32);
+
+  --danger-soft: rgba(255, 122, 102, 0.16);
+  --hairline-strong: rgba(255, 255, 255, 0.16);
+  --overlay: rgba(0, 0, 0, 0.66);
+  --knob-shadow: rgba(0, 0, 0, 0.5) 0px 1px 3px;
+  --shadow-dialog: 0 16px 40px rgba(0, 0, 0, 0.6);
+  --toggle-knob: #f3f4f6;
+
+  color-scheme: dark;
+}
 * {
   margin: 0;
   padding: 0;
@@ -167,7 +226,7 @@ body {
 
 .btn-accent {
   background: var(--rausch-red);
-  color: var(--surface-white);
+  color: var(--accent-contrast);
 }
 
 .btn-accent:hover {
@@ -189,7 +248,7 @@ body {
 }
 
 .btn-danger:hover {
-  background: #fff0f3;
+  background: var(--danger-soft);
 }
 
 .btn-sm {
@@ -316,10 +375,10 @@ body {
   left: 3px;
   width: 22px;
   height: 22px;
-  background: var(--surface-white);
+  background: var(--toggle-knob);
   border-radius: var(--radius-circle);
   transition: transform 0.2s;
-  box-shadow: rgba(0, 0, 0, 0.15) 0px 1px 3px;
+  box-shadow: var(--knob-shadow);
 }
 
 .toggle input:checked + .toggle-track {
@@ -479,7 +538,7 @@ body {
   justify-content: center;
   border-radius: 9px;
   background: var(--rausch-red);
-  color: var(--surface-white);
+  color: var(--accent-contrast);
 }
 
 .nav-list {
@@ -630,13 +689,13 @@ body {
 
 .badge-plus {
   background: var(--success-tint);
-  border-color: rgba(15, 123, 63, 0.25);
+  border-color: var(--success-border);
   color: var(--success);
 }
 
 .badge-basic {
   background: var(--warning-tint);
-  border-color: rgba(154, 100, 0, 0.25);
+  border-color: var(--warning-border);
   color: var(--warning);
 }
 
@@ -648,19 +707,19 @@ body {
 
 .badge-info {
   background: var(--info-tint);
-  border-color: rgba(11, 107, 203, 0.25);
+  border-color: var(--info-border);
   color: var(--info);
 }
 
 .badge-success {
   background: var(--success-tint);
-  border-color: rgba(15, 123, 63, 0.25);
+  border-color: var(--success-border);
   color: var(--success);
 }
 
 .badge-danger {
   background: var(--danger-tint);
-  border-color: rgba(200, 16, 63, 0.25);
+  border-color: var(--danger-border);
   color: var(--danger);
 }
 
@@ -681,32 +740,32 @@ body {
 
 .status-bar-success {
   background: var(--success-tint);
-  border-color: rgba(15, 123, 63, 0.25);
+  border-color: var(--success-border);
   color: var(--success);
 }
 
 .status-bar-error {
   background: var(--danger-tint);
-  border-color: rgba(200, 16, 63, 0.25);
+  border-color: var(--danger-border);
   color: var(--danger);
 }
 
 .status-bar-info {
   background: var(--info-tint);
-  border-color: rgba(11, 107, 203, 0.25);
+  border-color: var(--info-border);
   color: var(--info);
 }
 
 .status-bar-warning {
   background: var(--warning-tint);
-  border-color: rgba(154, 100, 0, 0.25);
+  border-color: var(--warning-border);
   color: var(--warning);
 }
 
 .spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(0, 0, 0, 0.12);
+  border: 2px solid var(--hairline-strong);
   border-top-color: var(--rausch-red);
   border-radius: var(--radius-circle);
   animation: spin 0.8s linear infinite;
@@ -736,7 +795,7 @@ body {
   position: fixed;
   inset: 0;
   z-index: 200;
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -749,7 +808,7 @@ body {
   max-width: 420px;
   background: var(--surface-white);
   border-radius: var(--radius-lg);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
+  box-shadow: var(--shadow-dialog);
   overflow: hidden;
   animation: slideUp 0.25s ease-out;
 }
@@ -1110,7 +1169,7 @@ body {
   justify-content: center;
   border-radius: var(--radius-circle);
   background: var(--rausch-red);
-  color: var(--surface-white);
+  color: var(--accent-contrast);
   font-size: 18px;
   font-weight: 600;
 }
@@ -1311,7 +1370,7 @@ body {
   justify-content: center;
   border-radius: 18px;
   background: var(--rausch-red);
-  color: var(--surface-white);
+  color: var(--accent-contrast);
 }
 
 .auth-title {
@@ -1630,4 +1689,16 @@ body {
   .view-body {
     padding: var(--sp-lg) var(--sp-md);
   }
+}
+
+/* ===== 主题切换按钮 ===== */
+.theme-toggle {
+  flex-shrink: 0;
+}
+
+.theme-toggle-floating {
+  position: fixed;
+  top: var(--sp-lg);
+  right: var(--sp-lg);
+  z-index: 30;
 }

@@ -4,6 +4,7 @@ import StatusBar from '../components/StatusBar'
 import { IconEye, IconEyeOff, IconLock, IconMail, IconQrCode } from '../components/icons'
 import { errorMessage } from '../lib/ipc'
 import { useAuth } from '../state/auth'
+import ThemeToggle from '../components/ThemeToggle'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const RESEND_SECONDS = 60
@@ -95,6 +96,7 @@ export default function AuthPage() {
 
   return (
     <div className="auth-screen">
+      <ThemeToggle className="theme-toggle-floating" />
       <div className="auth-container">
         <div className="auth-header">
           <span className="auth-logo">

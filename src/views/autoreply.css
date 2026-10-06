@@ -510,7 +510,7 @@
 .auto-reply-page .action-result {
   margin-top: 14px;
   padding: 10px 16px;
-  border: 1px solid rgba(15, 123, 63, 0.25);
+  border: 1px solid var(--success-border);
   border-radius: var(--radius-sm);
   background: var(--success-tint);
   color: var(--success);
@@ -520,7 +520,7 @@
 }
 
 .auto-reply-page .action-result.error {
-  border-color: rgba(200, 16, 63, 0.25);
+  border-color: var(--danger-border);
   background: var(--danger-tint);
   color: var(--danger);
 }
@@ -532,7 +532,7 @@
   align-items: center;
   gap: var(--sp-md);
   padding: var(--sp-md) var(--sp-lg);
-  border: 1px solid rgba(154, 100, 0, 0.25);
+  border: 1px solid var(--warning-border);
   border-radius: var(--radius-md);
   background: var(--warning-tint);
   color: var(--warning);

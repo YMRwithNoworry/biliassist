@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../state/auth'
+import ThemeToggle from './ThemeToggle'
 import {
   IconChat,
   IconHome,
@@ -62,6 +63,7 @@ export default function Sidebar() {
           <span className={isPlus ? 'badge badge-plus' : 'badge badge-basic'}>
             {isPlus ? 'Plus' : 'Basic'}
           </span>
+          <ThemeToggle />
           <button className="icon-btn" onClick={handleLogout} title="退出登录" aria-label="退出登录">
             <IconLogout size={16} />
           </button>
