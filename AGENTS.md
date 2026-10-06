@@ -24,7 +24,7 @@ BiliAssist 是使用 Tauri 2 和 React 构建的 B站账号管理桌面应用：
     cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
     cargo check --locked --manifest-path src-tauri/Cargo.toml
     cargo test --locked --manifest-path src-tauri/Cargo.toml
-    cargo build --release --locked --manifest-path src-tauri/Cargo.toml
+    cargo build --release --locked --features custom-protocol --manifest-path src-tauri/Cargo.toml
 
 tauri-build 会把 dist/ 内嵌进二进制，因此改完前端必须先 `npm run build`，否则 cargo 构建的是上一次的前端产物。
 
@@ -69,6 +69,7 @@ tauri-build 会把 dist/ 内嵌进二进制，因此改完前端必须先 `npm r
 - .github/workflows/release.yml 根据 Conventional Commit 自动调整语义化版本。
 - 版本在 package.json、src-tauri/Cargo.toml 和 src-tauri/tauri.conf.json 中保持一致。
 - 发布流程先执行 npm ci 与 npm run build 生成前端产物，再构建 Cargo 二进制，最后打包各平台安装包。
+- 生产构建必须带 `--features custom-protocol`：否则 Tauri 不会把 dist/ 内嵌进二进制，窗口会去加载 build.devUrl（http://localhost:1420）并报“localhost 拒绝连接”。
 
 ## 数据
 

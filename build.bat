@@ -30,7 +30,7 @@ if %errorlevel% neq 0 (
 )
 
 echo 构建 Tauri 后端...
-cargo build --release --locked --manifest-path src-tauriCargo.toml
+cargo build --release --locked --features custom-protocol --manifest-path src-tauri\Cargo.toml
 if %errorlevel% neq 0 (
     echo 构建失败
     pause

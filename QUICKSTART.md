@@ -45,7 +45,7 @@ Windows 可双击 start.bat。Linux/macOS 可执行：
 Windows 可运行 build.bat，全平台通用命令为：
 
     npm run build
-    cargo build --release --locked --manifest-path src-tauri/Cargo.toml
+    cargo build --release --locked --features custom-protocol --manifest-path src-tauri/Cargo.toml
 
 产物位于 src-tauri/target/release/。cargo 构建会把 dist/ 里的前端产物内嵌进二进制，所以必须先构建前端。
 

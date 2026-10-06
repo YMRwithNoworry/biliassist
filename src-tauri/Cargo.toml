@@ -37,3 +37,8 @@ aes-gcm = "0.10"
 rand = "0.8"
 md-5 = "0.10"
 async-trait = "0.1"
+
+[features]
+# 生产构建必须开启：tauri-macros 用 cfg!(not(feature = "custom-protocol")) 判断开发/生产，
+# 未开启时生成的 Context 不内嵌 dist，窗口会去加载 build.devUrl（http://localhost:1420）。
+custom-protocol = ["tauri/custom-protocol"]

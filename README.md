@@ -54,9 +54,9 @@ BiliAssist 是使用 Tauri 2 与 React 构建的 B站账号管理与自动回复
 ## 构建
 
     npm run build
-    cargo build --release --locked --manifest-path src-tauri/Cargo.toml
+    cargo build --release --locked --features custom-protocol --manifest-path src-tauri/Cargo.toml
 
-前端产物在 `dist/`，会被编译进二进制。Windows 输出位于 src-tauri/target/release/bilibili-account-manager.exe，macOS/Linux 输出位于 src-tauri/target/release/bilibili-account-manager。
+前端产物在 `dist/`，会被编译进二进制；`--features custom-protocol` 必须保留，否则二进制不会内嵌前端，运行时会去连 http://localhost:1420。Windows 输出位于 src-tauri/target/release/bilibili-account-manager.exe，macOS/Linux 输出位于 src-tauri/target/release/bilibili-account-manager。
 
 ## 数据存储
 

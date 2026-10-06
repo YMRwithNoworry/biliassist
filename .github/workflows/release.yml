@@ -161,7 +161,7 @@ jobs:
 
       - name: 构建 Tauri 应用
         shell: bash
-        run: cargo build --release --locked --manifest-path src-tauri/Cargo.toml
+        run: cargo build --release --locked --features custom-protocol --manifest-path src-tauri/Cargo.toml
 
       - name: 安装 Windows 打包工具
         if: runner.os == 'Windows'
