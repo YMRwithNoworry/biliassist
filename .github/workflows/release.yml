@@ -77,8 +77,11 @@ jobs:
           mv "$TEMP_JSON" package.json
           sed -i '/^name = "bilibili-account-manager"$/ { n; s/^version = ".*"$/version = "'"$NEW_VERSION"'"/; }' src-tauri/Cargo.lock
           sed -i -E "0,/^version = \"[^\"]+\"/s//version = \"${NEW_VERSION}\"/" src-tauri/Cargo.toml
+          TEMP_CONF=$(mktemp)
+          jq --arg version "$NEW_VERSION" '.version = $version' src-tauri/tauri.conf.json > "$TEMP_CONF"
+          mv "$TEMP_CONF" src-tauri/tauri.conf.json
 
-          git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json
           git commit -m "chore(release): 发布 v${NEW_VERSION} [skip ci]"
           git push origin HEAD:${{ github.ref_name }}
           git tag -a "v${NEW_VERSION}" -m "BiliAssist v${NEW_VERSION}"
@@ -133,6 +136,17 @@ jobs:
         with:
           ref: ${{ needs.version.outputs.tag_name }}
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 构建 React 前端
+        shell: bash
+        run: |
+          npm ci
+          npm run build
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
@@ -143,9 +157,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc g++ libayatana-appindicator3-dev libfontconfig-dev libglib2.0-dev libgtk-3-dev libssl-dev libvulkan1 libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libzstd-dev
+          sudo apt-get install -y build-essential curl file libayatana-appindicator3-dev libgtk-3-dev librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev libxdo-dev pkg-config
 
-      - name: 构建原生应用
+      - name: 构建 Tauri 应用
         shell: bash
         run: cargo build --release --locked --manifest-path src-tauri/Cargo.toml
 

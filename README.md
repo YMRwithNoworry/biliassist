@@ -1,6 +1,6 @@
 # BiliAssist
 
-BiliAssist 是使用 Rust、GPUI 和 [gpui-kit](https://github.com/longbridge/gpui-kit)（内含 gpui-component 组件库）构建的 B站账号管理与自动回复原生桌面应用。界面直接由 GPU 渲染，不依赖浏览器 WebView、Vue 或 Tauri。
+BiliAssist 是使用 Tauri 2 与 React 构建的 B站账号管理与自动回复桌面应用：Rust 负责业务逻辑、存储与系统集成，React 负责界面，两者通过 Tauri IPC command 通信。
 
 ## 功能
 
@@ -17,11 +17,12 @@ BiliAssist 是使用 Rust、GPUI 和 [gpui-kit](https://github.com/longbridge/gp
 
 ## 技术栈
 
-- 原生界面：GPUI + gpui-kit（gpui-component 组件库）
+- 界面：React 19 + TypeScript + Vite（`src/`）
+- 桌面壳与 IPC：Tauri 2（`src-tauri/`，`#[tauri::command]` 暴露后端能力）
 - 异步运行时：Tokio
 - 网络：reqwest
 - 本地存储：AES-256-GCM
-- 应用认证：Supabase Auth
+- 应用认证：Supabase Auth（在 Rust 侧调用，前端不接触密钥）
 
 ## 下载与安装
 
@@ -35,27 +36,27 @@ BiliAssist 是使用 Rust、GPUI 和 [gpui-kit](https://github.com/longbridge/gp
 
 ## 开发
 
-需要安装 Rust stable。Linux 还需要 Fontconfig、Wayland/X11、Vulkan Loader 等 GPUI 系统依赖。
+需要 Node.js 20+ 与 Rust stable。Linux 还需要 WebKitGTK 4.1、GTK3、librsvg 等 Tauri 系统依赖。
 
-    cargo run --locked --manifest-path src-tauri/Cargo.toml
+    npm install
+    npm run tauri:dev
 
-也可使用兼容脚本：
-
-    npm run dev
-
-package.json 不包含 JavaScript 依赖，只提供版本号和 Cargo 命令别名。
+`npm run dev` 只启动 Vite 开发服务器（浏览器里可以调样式，但 IPC 不可用）。
 
 ## 检查与测试
 
+    npm run typecheck
+    npm run build
     cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
     cargo check --locked --manifest-path src-tauri/Cargo.toml
     cargo test --locked --manifest-path src-tauri/Cargo.toml
 
 ## 构建
 
+    npm run build
     cargo build --release --locked --manifest-path src-tauri/Cargo.toml
 
-Windows 输出位于 src-tauri/target/release/bilibili-account-manager.exe，macOS/Linux 输出位于 src-tauri/target/release/bilibili-account-manager。
+前端产物在 `dist/`，会被编译进二进制。Windows 输出位于 src-tauri/target/release/bilibili-account-manager.exe，macOS/Linux 输出位于 src-tauri/target/release/bilibili-account-manager。
 
 ## 数据存储
 

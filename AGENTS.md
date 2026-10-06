@@ -2,41 +2,48 @@
 
 ## 项目概览
 
-BiliAssist 是使用 Rust、GPUI 和 gpui-kit 构建的 B站账号管理原生桌面应用，界面语言为中文。
+BiliAssist 是使用 Tauri 2 和 React 构建的 B站账号管理桌面应用：Rust 提供业务逻辑与系统集成，React 提供界面，界面语言为中文。
 
 ## 技术栈
 
-- 界面：GPUI + gpui-kit（内含 gpui-component 组件库）
-- 依赖：gpui-kit = "0.6.4"（crates.io），它统一提供 GPUI（gpui-pre）、gpui-base、gpui-component 和默认图标资源，不再使用 git 依赖
-- 异步：Tokio
+- 界面：React 19 + TypeScript + Vite（src/），路由使用 react-router-dom 的 HashRouter
+- 桌面壳：Tauri 2（src-tauri/），前端只能通过 src/lib/ipc.ts 里的 `api.*` 调用 `#[tauri::command]`
+- 异步：Tokio（tauri::async_runtime）
 - 网络：reqwest
-- 应用认证：Supabase Auth
+- 应用认证：Supabase Auth（在 Rust 侧调用，密钥不进前端）
 - 存储：AES-256-GCM 加密本地文件
 
 ## 常用命令
 
 从仓库根目录运行：
 
-    cargo run --manifest-path src-tauri/Cargo.toml
+    npm install
+    npm run tauri:dev
+    npm run build
+    npm run typecheck
     cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
     cargo check --locked --manifest-path src-tauri/Cargo.toml
     cargo test --locked --manifest-path src-tauri/Cargo.toml
     cargo build --release --locked --manifest-path src-tauri/Cargo.toml
 
-package.json 只保存发布版本并提供上述 Cargo 命令的 npm 别名，不包含 Web 前端依赖。
+tauri-build 会把 dist/ 内嵌进二进制，因此改完前端必须先 `npm run build`，否则 cargo 构建的是上一次的前端产物。
 
 ## 架构
 
-- src-tauri/src/main.rs：原生二进制入口。
-- src-tauri/src/lib.rs：初始化日志、本地存储、自动回复服务和 GPUI 应用。
-- src-tauri/src/ui/app.rs：主窗口、导航、账号管理与自动回复界面。
-- src-tauri/src/ui/auth.rs：Supabase 邮箱密码和 OTP 认证。
-- src-tauri/src/ui/platform.rs：本地激活与开机自启。
+- src/main.tsx、src/App.tsx：React 入口与应用外壳（导航、登录守卫、激活状态）。
+- src/lib/ipc.ts：唯一的 IPC 契约，前端所有后端调用都经过它。
+- src/views/：登录、概览、账号管理、自动回复、支持项目等页面。
+- src-tauri/src/main.rs：二进制入口。
+- src-tauri/src/lib.rs：Tauri Builder、插件、托盘、关闭窗口隐藏和服务启动。
+- src-tauri/src/commands.rs：全部 `#[tauri::command]`，是前端唯一能触达的后端边界。
+- src-tauri/src/auth.rs：Supabase 邮箱密码和 OTP 认证。
+- src-tauri/src/cloud.rs：账号与自动回复设置的云端同步。
+- src-tauri/src/platform.rs：本地激活与开发模式判断；开机自启由 tauri-plugin-autostart 提供。
 - src-tauri/src/bilibili.rs：B站二维码登录。
 - src-tauri/src/storage.rs：加密账号持久化。
 - src-tauri/src/auto_reply/：视频评论、动态评论、私信和关注处理器。
 
-GPUI 界面直接调用同一进程中的 Rust 模块，没有 WebView 或 IPC command 边界。
+新增后端能力时先在 commands.rs 暴露命令，再在 src/lib/ipc.ts 补上类型化封装，界面层不直接调用 `invoke`。
 
 ## 自动回复
 
@@ -52,17 +59,34 @@ GPUI 界面直接调用同一进程中的 Rust 模块，没有 WebView 或 IPC c
 
 ## 提交与推送
 
-- 改动通过 cargo fmt、cargo check、cargo test 后，直接提交并推送到 origin main，不需要再向用户确认。
+- 改动通过 npm run build、cargo fmt、cargo check、cargo test 后，直接提交并推送到 origin main，不需要再向用户确认。
 - 提交信息使用 Conventional Commits；release workflow 按最后一条提交信息决定版本号
   （feat 提升 minor，fix/chore/docs 提升 patch，带 `!` 或 BREAKING CHANGE 提升 major）。
-- 推送会触发发布构建，因此推送前必须确认 Cargo.lock 已同步且 `--locked` 构建可通过。
+- 推送会触发发布构建，因此推送前必须确认 Cargo.lock 已同步、package-lock.json 已提交且 `--locked` 构建可通过。
 
 ## 发布
 
 - .github/workflows/release.yml 根据 Conventional Commit 自动调整语义化版本。
-- 版本在 package.json 和 src-tauri/Cargo.toml 中保持一致。
-- Windows、macOS、Linux 均直接构建 Cargo 原生二进制。
+- 版本在 package.json、src-tauri/Cargo.toml 和 src-tauri/tauri.conf.json 中保持一致。
+- 发布流程先执行 npm ci 与 npm run build 生成前端产物，再构建 Cargo 二进制，最后打包各平台安装包。
 
 ## 数据
 
 用户数据位于 ~/.bilibili_account_manager/。不要在开发或测试中删除 key.bin，也不要提交 Cookie、访问令牌或真实用户数据。
+
+<!-- BEGIN dsh-global-system-prompt -->
+<!--
+  Managed by the dsh-global-system-prompt plugin. The rules below are synced from:
+  C:\Users\Administrator\.dsh\global-prompt.md
+  Edits inside this block are overwritten on the next sync; delete the block,
+  markers included, to stop syncing.
+-->
+
+Global rules — follow these in every task in this project:
+
+默认使用 Niubash（Bash on Windows，`niu -c`）执行任务。
+每次任务结束将项目上传至github远程仓库，若无远程仓库则自己创建。
+jdk在这里D:\MC\jdk
+中文回答问题
+
+<!-- END dsh-global-system-prompt -->

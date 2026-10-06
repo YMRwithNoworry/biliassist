@@ -9,14 +9,17 @@ repository = "https://github.com/YMRwithNoworry/biliassist"
 
 [lib]
 name = "bilibili_account_manager_lib"
-crate-type = ["rlib"]
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# GPUI Kit 统一提供 GPUI（gpui-pre）、组件库（gpui-component）、基础层（gpui-base）和默认图标资源。
-# gpui-kit 的默认特性已启用 component 与 assets，并附带 font-kit 字体后端。
-gpui-kit = "0.6.4"
+# Tauri 2 提供窗口、托盘和 IPC command 边界；前端是 React（见仓库根目录 src/）。
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
 async-channel = "2"
-auto-launch = "0.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", features = ["cookies", "json", "gzip", "brotli", "deflate"] }
@@ -34,14 +37,3 @@ aes-gcm = "0.10"
 rand = "0.8"
 md-5 = "0.10"
 async-trait = "0.1"
-tray-icon = { version = "0.24.2", default-features = false, features = ["gtk"] }
-
-[target.'cfg(windows)'.build-dependencies]
-winresource = "0.1"
-
-[target.'cfg(target_os = "linux")'.dependencies]
-gtk = "0.18"
-
-[target.'cfg(target_os = "windows")'.dependencies]
-raw-window-handle = "0.6"
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }

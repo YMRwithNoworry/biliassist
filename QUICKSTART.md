@@ -8,11 +8,11 @@
 
 ## 环境
 
-安装 Rust stable，并确认 rustc 和 cargo 命令可用。
+开发需要 Node.js 20+ 与 Rust stable，并确认 cargo 命令可用。
 
-Linux 需要安装 GPUI 使用的系统库。Ubuntu 22.04 可执行：
+Linux 需要安装 Tauri 使用的系统库。Ubuntu 22.04 可执行：
 
-    sudo apt-get install gcc g++ libfontconfig-dev libglib2.0-dev libssl-dev libvulkan1 libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libzstd-dev
+    sudo apt-get install build-essential curl file libayatana-appindicator3-dev libgtk-3-dev librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev libxdo-dev pkg-config
 
 ## 启动
 
@@ -23,16 +23,17 @@ Windows 可双击 start.bat。Linux/macOS 可执行：
 
 也可直接启动：
 
-    cargo run --locked --manifest-path src-tauri/Cargo.toml
+    npm install
+    npm run tauri:dev
 
 首次打开后，先使用邮箱登录应用，再进入“扫码登录”添加 B站账号。
 
-关闭主窗口后程序会继续运行在系统托盘中。需要再次打开时点击托盘图标，完全退出请使用托盘菜单中的“退出程序”。
+关闭主窗口后程序会继续运行在系统托盘中。需要再次打开时点击托盘图标，完全退出请使用托盘菜单中的“退出”。
 
 ## 自动回复
 
 1. 在“账号管理”确认当前 B站账号。
-2. 在“自动回复”打开总开关并设置检查间隔。
+2. 在“自动回复”打开总开关并设置检查间隔与快速通道间隔。
 3. 分别配置视频评论、动态评论、私信和关注渠道。
 4. 需要处理特定视频时，添加 BV 号并填写独立回复内容。
 5. 保存后可使用“立即处理视频评论”或“立即处理动态评论”验证。
@@ -43,13 +44,15 @@ Windows 可双击 start.bat。Linux/macOS 可执行：
 
 Windows 可运行 build.bat，全平台通用命令为：
 
+    npm run build
     cargo build --release --locked --manifest-path src-tauri/Cargo.toml
 
-产物位于 src-tauri/target/release/。
+产物位于 src-tauri/target/release/。cargo 构建会把 dist/ 里的前端产物内嵌进二进制，所以必须先构建前端。
 
 ## 常见问题
 
 - 扫码无响应：确认网络可访问 B站接口，二维码过期后重新生成。
 - 自动回复未执行：确认总开关、当前渠道和当前 B站账号均已启用。
 - 账号无法读取：检查 .bilibili_account_manager/key.bin 是否被移动或替换。
-- Linux 窗口无法打开：确认 Vulkan 驱动和 Wayland/X11 运行库已经安装。
+- Linux 窗口无法打开：确认 WebKitGTK 4.1 与 GTK3 运行库已经安装。
+- 界面空白或没有数据：确认 cargo 构建前执行过 npm run build。

@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
-pub(super) const SUPABASE_URL: &str = "https://dweeixiqejtewdlzfzwx.supabase.co";
-pub(super) const SUPABASE_KEY: &str = "sb_publishable__R-vclqmTFFFgfK4zrctsg_dMxRD-nz";
+pub(crate) const SUPABASE_URL: &str = "https://dweeixiqejtewdlzfzwx.supabase.co";
+pub(crate) const SUPABASE_KEY: &str = "sb_publishable__R-vclqmTFFFgfK4zrctsg_dMxRD-nz";
 const SESSION_FILE: &str = "auth_session.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,7 +32,7 @@ fn error_message(value: &Value) -> String {
         .to_string()
 }
 
-pub(super) fn client() -> &'static reqwest::Client {
+pub(crate) fn client() -> &'static reqwest::Client {
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     CLIENT.get_or_init(reqwest::Client::new)
 }
