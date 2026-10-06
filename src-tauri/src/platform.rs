@@ -20,16 +20,8 @@ pub fn activate_license(key: &str) -> Result<(), String> {
     std::fs::write(data_dir().join(LICENSE_FILE), b"activated").map_err(|error| error.to_string())
 }
 
-/// 开发模式下注册的开机自启会指向 target 目录里的临时可执行文件，开机必然启动失败。
+/// 开发模式：debug 构建（cargo run / tauri dev）注册的自启指向 target 目录里随时会被重建的可执行文件，
+/// 开机必然启动失败，所以此时不允许开启。release 构建一律视为正式版，本地 target/release 也允许。
 pub fn is_dev_mode() -> bool {
-    if std::env::var("TAURI_ENV_TAURI_DEV").is_ok() {
-        return true;
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        let target_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
-        if exe.starts_with(&target_dir) {
-            return true;
-        }
-    }
-    false
+    cfg!(debug_assertions) || std::env::var("TAURI_ENV_TAURI_DEV").is_ok()
 }

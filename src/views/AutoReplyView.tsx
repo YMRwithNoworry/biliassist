@@ -363,11 +363,13 @@ export default function AutoReplyView() {
   const toggleAutostart = async () => {
     const next = !autostartEnabled
     setAutostartEnabled(next)
+    setNotice(null)
     try {
       await api.setAutostart(next)
+      setNotice({ tone: 'success', text: next ? '已开启开机自启' : '已关闭开机自启' })
     } catch (error) {
       setAutostartEnabled(!next)
-      console.error('设置开机自启失败:', error)
+      setNotice({ tone: 'error', text: '设置开机自启失败：' + errorMessage(error) })
     }
   }
 
