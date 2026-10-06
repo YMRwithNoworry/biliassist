@@ -1,8 +1,33 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import Dialog from '../components/Dialog'
-import StatusBar, { type StatusTone } from '../components/StatusBar'
-import { IconKey, IconLock } from '../components/icons'
+import {
+  History,
+  KeyRound,
+  Loader2,
+  Lock,
+  MessageSquare,
+  Plus,
+  RefreshCw,
+  Save,
+  Trash2,
+  Video,
+  Zap,
+} from 'lucide-react'
+import { toast } from 'sonner'
+import Dialog from '@/components/Dialog'
+import EmptyState from '@/components/EmptyState'
+import SectionCard from '@/components/SectionCard'
+import StatusBar, { type StatusTone } from '@/components/StatusBar'
+import ViewShell from '@/components/ViewShell'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
 import {
   api,
   errorMessage,
@@ -14,9 +39,9 @@ import {
   type ReplyHistory,
   type ReplyPolicy,
   type TrackedVideoSettings,
-} from '../lib/ipc'
-import { useAuth } from '../state/auth'
-import './autoreply.css'
+} from '@/lib/ipc'
+import { cn } from '@/lib/utils'
+import { useAuth } from '@/state/auth'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
@@ -61,6 +86,11 @@ const clampNumber = (value: unknown, min: number, max: number, fallback: number)
   return Math.min(max, Math.max(min, Math.round(parsed)))
 }
 
+const isInRange = (text: string, min: number, max: number) => {
+  const parsed = Number(text)
+  return Number.isFinite(parsed) && Math.round(parsed) >= min && Math.round(parsed) <= max
+}
+
 const isMsgSource = (value: unknown): value is MsgSource =>
   value === 'comment' || value === 'dynamic' || value === 'directMessage' || value === 'follow'
 
@@ -83,7 +113,10 @@ const normalizeChannel = (raw: unknown, fallbackPolicy: ReplyPolicy): ChannelRep
   }
 }
 
-const normalizeCommentChannel = (raw: unknown, fallbackPolicy: ReplyPolicy): CommentReplySettings => {
+const normalizeCommentChannel = (
+  raw: unknown,
+  fallbackPolicy: ReplyPolicy,
+): CommentReplySettings => {
   const source = isRecord(raw) ? raw : {}
   return {
     ...normalizeChannel(raw, fallbackPolicy),
@@ -144,8 +177,67 @@ const normalizeSettings = (raw: unknown): AutoReplySettings => {
 
 const isBvidLike = (bvid: string) => /^bv[0-9a-z]+$/i.test(bvid)
 
+/** 开关行：左说明右开关，页面里所有布尔设置都长这样。 */
+function SettingToggle({
+  label,
+  description,
+  checked,
+  onCheckedChange,
+  className,
+}: {
+  label: string
+  description?: string
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+  className?: string
+}) {
+  return (
+    <div className={cn('flex items-center justify-between gap-4', className)}>
+      <div className="min-w-0 space-y-1">
+        <p className="text-sm font-medium">{label}</p>
+        {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
+      </div>
+      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+    </div>
+  )
+}
+
+/** 回复策略：渠道与指定视频共用同一组选项。 */
+function ReplyPolicyField({
+  value,
+  onChange,
+  idPrefix,
+}: {
+  value: ReplyPolicy
+  onChange: (policy: ReplyPolicy) => void
+  idPrefix: string
+}) {
+  return (
+    <div className="space-y-2">
+      <Label>回复策略</Label>
+      <RadioGroup
+        value={value}
+        onValueChange={(next) => onChange(next as ReplyPolicy)}
+        className="flex flex-wrap gap-x-5 gap-y-2"
+      >
+        <div className="flex items-center gap-2">
+          <RadioGroupItem value="perMessage" id={`${idPrefix}-per-message`} />
+          <Label htmlFor={`${idPrefix}-per-message`} className="font-normal">
+            每条消息
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <RadioGroupItem value="oncePerUser" id={`${idPrefix}-once-per-user`} />
+          <Label htmlFor={`${idPrefix}-once-per-user`} className="font-normal">
+            每个用户一次
+          </Label>
+        </div>
+      </RadioGroup>
+    </div>
+  )
+}
+
 export default function AutoReplyView() {
-  const navigate = useNavigate()
   const { isPlus, activateLicense } = useAuth()
 
   const [settings, setSettings] = useState<AutoReplySettings | null>(null)
@@ -251,14 +343,11 @@ export default function AutoReplyView() {
   }
 
   const saveNow = async () => {
-    setActionResult('')
-    setActionError(false)
     try {
       await ensureSaved()
-      setActionResult('设置已保存')
+      toast.success('设置已保存')
     } catch (error) {
-      setActionResult(errorMessage(error) || '保存设置失败')
-      setActionError(true)
+      toast.error(errorMessage(error) || '保存设置失败')
     }
   }
 
@@ -395,94 +484,6 @@ export default function AutoReplyView() {
     (key === 'comment' &&
       data.trackedVideos.some((video) => video.enabled && isBvidLike(video.bvid.trim())))
 
-  const renderOverview = (data: AutoReplySettings) => (
-    <div className="surface-section overview-section">
-      <div className="section-heading">
-        <div>
-          <h2>运行设置</h2>
-          <p>统一控制自动回复服务的运行状态和检查频率。</p>
-        </div>
-      </div>
-
-      <div className="setting-list">
-        <div className="setting-row">
-          <div className="setting-copy">
-            <strong>自动回复总开关</strong>
-            <span>关闭后暂停自动回复；视频、动态及指定视频点赞仍按各自设置执行。</span>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={data.enabled}
-              onChange={(event) => {
-                const checked = event.target.checked
-                update((draft) => {
-                  draft.enabled = checked
-                })
-              }}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-
-        <div className="setting-row">
-          <div className="setting-copy">
-            <strong>开机自启</strong>
-            <span>系统启动后在后台运行。</span>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={autostartEnabled}
-              onChange={() => void toggleAutostart()}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-      </div>
-
-      <div className="compact-field">
-        <div className="setting-copy">
-          <label htmlFor="poll-interval">检查间隔</label>
-          <span>完整补扫视频评论、动态评论、私信和关注的周期。</span>
-        </div>
-        <div className="number-control">
-          <input
-            id="poll-interval"
-            type="number"
-            min={MIN_INTERVAL}
-            max={MAX_INTERVAL}
-            inputMode="numeric"
-            value={intervalText}
-            onChange={(event) => setIntervalText(event.target.value)}
-            onBlur={commitInterval}
-          />
-          <span>秒</span>
-        </div>
-      </div>
-
-      <div className="compact-field">
-        <div className="setting-copy">
-          <label htmlFor="fast-interval">快速通道间隔</label>
-          <span>只抓取每个评论目标的最新一页，用于新评论秒回；私信和关注仍按检查间隔处理。</span>
-        </div>
-        <div className="number-control">
-          <input
-            id="fast-interval"
-            type="number"
-            min={MIN_FAST_INTERVAL}
-            max={MAX_FAST_INTERVAL}
-            inputMode="numeric"
-            value={fastIntervalText}
-            onChange={(event) => setFastIntervalText(event.target.value)}
-            onBlur={commitFastInterval}
-          />
-          <span>秒</span>
-        </div>
-      </div>
-    </div>
-  )
-
   const renderChannelPanel = (data: AutoReplySettings) => {
     const channel = data.channels[activeChannel]
     const commentChannel =
@@ -491,203 +492,117 @@ export default function AutoReplyView() {
         : activeChannel === 'dynamic'
           ? data.channels.dynamic
           : null
-    const isCommentChannel = commentChannel !== null
 
     return (
-      <div className="surface-section channel-section">
-        <div className="section-heading channel-heading">
-          <div>
-            <h2>分渠道配置</h2>
-            <p>回复内容和回复策略互不影响。</p>
+      <div className="space-y-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold">{activeMeta.label}</h3>
+            <p className="text-xs text-muted-foreground">{activeMeta.description}</p>
           </div>
+          <Switch
+            checked={channel.enabled}
+            onCheckedChange={(checked) =>
+              updateChannel((target) => {
+                target.enabled = checked
+              })
+            }
+          />
         </div>
 
-        <div className="channel-tabs" role="tablist" aria-label="自动回复渠道">
-          {CHANNEL_TABS.map((tab) => (
-            <button
-              key={tab.key}
-              id={`channel-tab-${tab.key}`}
-              className={`channel-tab${activeChannel === tab.key ? ' active' : ''}`}
-              type="button"
-              role="tab"
-              aria-selected={activeChannel === tab.key}
-              aria-controls={`channel-panel-${tab.key}`}
-              onClick={() => setActiveChannel(tab.key)}
-            >
-              <span>{tab.label}</span>
-              <small className={isChannelEnabled(data, tab.key) ? 'enabled' : ''}>
-                {isChannelEnabled(data, tab.key) ? '已开启' : '已关闭'}
-              </small>
-            </button>
-          ))}
+        {commentChannel ? (
+          <SettingToggle
+            label="自动点赞评论"
+            description="该开关可独立于评论自动回复运行。"
+            checked={commentChannel.likeComments}
+            onCheckedChange={(checked) =>
+              updateCommentChannel((target) => {
+                target.likeComments = checked
+              })
+            }
+          />
+        ) : null}
+
+        <ReplyPolicyField
+          value={channel.replyPolicy}
+          idPrefix={activeChannel}
+          onChange={(policy) =>
+            updateChannel((target) => {
+              target.replyPolicy = policy
+            })
+          }
+        />
+
+        <div className="space-y-2">
+          <Label htmlFor={`${activeChannel}-message`}>固定回复内容</Label>
+          <Textarea
+            id={`${activeChannel}-message`}
+            rows={4}
+            placeholder="输入自动回复内容"
+            value={channel.message}
+            onChange={(event) => setChannelMessage(event.target.value)}
+            onBlur={saveCurrent}
+          />
+          <p className="text-xs text-muted-foreground">{'支持 {用户名}、{时间}'}</p>
         </div>
 
-        <div
-          id={`channel-panel-${activeChannel}`}
-          className="channel-panel"
-          role="tabpanel"
-          aria-labelledby={`channel-tab-${activeChannel}`}
-        >
-          <div className="channel-title-row">
-            <div>
-              <h3>{activeMeta.label}</h3>
-              <p>{activeMeta.description}</p>
+        {activeChannel === 'comment' ? (
+          <div className="space-y-4 border-t pt-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-1">
+                <h4 className="text-sm font-semibold">指定视频</h4>
+                <p className="text-xs text-muted-foreground">
+                  填写 BV 号后，额外处理该视频评论；每个视频可使用独立回复内容。
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={addTrackedVideo}>
+                <Plus />
+                添加视频
+              </Button>
             </div>
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={channel.enabled}
-                onChange={(event) => {
-                  const checked = event.target.checked
-                  updateChannel((target) => {
-                    target.enabled = checked
-                  })
-                }}
+
+            {data.trackedVideos.length === 0 ? (
+              <EmptyState
+                icon={Video}
+                title="尚未添加指定视频"
+                description="添加后该视频的评论会走独立回复内容与点赞开关。"
               />
-              <span className="toggle-track" />
-            </label>
-          </div>
+            ) : (
+              <div className="space-y-4">
+                {data.trackedVideos.map((video, index) => {
+                  const invalidBvid = video.bvid.trim() !== '' && !isBvidLike(video.bvid.trim())
 
-          {commentChannel ? (
-            <div className="setting-row channel-option-row">
-              <div className="setting-copy">
-                <strong>自动点赞评论</strong>
-                <span>该开关可独立于评论自动回复运行。</span>
-              </div>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={commentChannel.likeComments}
-                  onChange={(event) => {
-                    const checked = event.target.checked
-                    updateCommentChannel((target) => {
-                      target.likeComments = checked
-                    })
-                  }}
-                />
-                <span className="toggle-track" />
-              </label>
-            </div>
-          ) : null}
-
-          <div className="channel-form-grid">
-            <div className="form-field full-width">
-              <label>回复策略</label>
-              <div
-                className="segmented-control"
-                role="group"
-                aria-label={`${activeMeta.label}回复策略`}
-              >
-                <button
-                  type="button"
-                  className={channel.replyPolicy === 'perMessage' ? 'active' : ''}
-                  onClick={() =>
-                    updateChannel((target) => {
-                      target.replyPolicy = 'perMessage'
-                    })
-                  }
-                >
-                  每条消息
-                </button>
-                <button
-                  type="button"
-                  className={channel.replyPolicy === 'oncePerUser' ? 'active' : ''}
-                  onClick={() =>
-                    updateChannel((target) => {
-                      target.replyPolicy = 'oncePerUser'
-                    })
-                  }
-                >
-                  每个用户一次
-                </button>
-              </div>
-            </div>
-
-            <div className="form-field full-width">
-              <label htmlFor={`${activeChannel}-message`}>固定回复内容</label>
-              <textarea
-                id={`${activeChannel}-message`}
-                rows={4}
-                placeholder="输入自动回复内容"
-                value={channel.message}
-                onChange={(event) => setChannelMessage(event.target.value)}
-                onBlur={saveCurrent}
-              />
-              <span className="field-hint">{'支持 {用户名}、{时间}'}</span>
-            </div>
-          </div>
-
-          {activeChannel === 'comment' ? (
-            <section className="tracked-videos-section">
-              <div className="tracked-videos-heading">
-                <div>
-                  <h4>指定视频</h4>
-                  <p>填写 BV 号后，额外处理该视频评论；每个视频可使用独立回复内容。</p>
-                </div>
-                <button className="btn btn-ghost btn-sm" type="button" onClick={addTrackedVideo}>
-                  <svg
-                    width={17}
-                    height={17}
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path d="M12 5v14M5 12h14" />
-                  </svg>
-                  添加视频
-                </button>
-              </div>
-
-              {data.trackedVideos.length === 0 ? (
-                <div className="tracked-videos-empty">尚未添加指定视频</div>
-              ) : (
-                <div className="tracked-videos-list">
-                  {data.trackedVideos.map((video, index) => (
-                    <div key={index} className="tracked-video-item">
-                      <div className="tracked-video-header">
-                        <div className="tracked-video-index">视频 {index + 1}</div>
-                        <label className="toggle" aria-label={`启用视频 ${index + 1}`}>
-                          <input
-                            type="checkbox"
-                            checked={video.enabled}
-                            onChange={(event) => {
-                              const checked = event.target.checked
-                              updateTrackedVideo(index, (target) => {
-                                target.enabled = checked
-                              })
-                            }}
-                          />
-                          <span className="toggle-track" />
-                        </label>
-                        <button
-                          className="icon-button tracked-video-remove"
-                          type="button"
+                  return (
+                    <div key={index} className="space-y-4 rounded-lg border bg-muted/40 p-4">
+                      <div className="flex items-center gap-3">
+                        <span className="flex-1 text-sm font-medium">视频 {index + 1}</span>
+                        <Switch
+                          aria-label={`启用视频 ${index + 1}`}
+                          checked={video.enabled}
+                          onCheckedChange={(checked) =>
+                            updateTrackedVideo(index, (target) => {
+                              target.enabled = checked
+                            })
+                          }
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
                           aria-label={`删除视频 ${index + 1}`}
-                          title="删除指定视频"
                           onClick={() => removeTrackedVideo(index)}
                         >
-                          <svg
-                            width={18}
-                            height={18}
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth={2}
-                          >
-                            <path d="M6 6l12 12M18 6 6 18" />
-                          </svg>
-                        </button>
+                          <Trash2 />
+                        </Button>
                       </div>
 
-                      <div className="tracked-video-grid">
-                        <div className="form-field">
-                          <label htmlFor={`tracked-video-bvid-${index}`}>BV 号</label>
-                          <input
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor={`tracked-video-bvid-${index}`}>BV 号</Label>
+                          <Input
                             id={`tracked-video-bvid-${index}`}
-                            type="text"
                             placeholder="例如 BV1xx411c7mD"
                             autoComplete="off"
+                            aria-invalid={invalidBvid}
                             value={video.bvid}
                             onChange={(event) => {
                               const bvid = event.target.value
@@ -697,48 +612,26 @@ export default function AutoReplyView() {
                             }}
                             onBlur={saveCurrent}
                           />
-                          {video.bvid.trim() !== '' && !isBvidLike(video.bvid.trim()) ? (
-                            <span className="field-hint error">BV 号格式不正确</span>
+                          {invalidBvid ? (
+                            <p className="text-xs text-destructive">BV 号格式不正确</p>
                           ) : (
-                            <span className="field-hint">必填，支持大小写 BV 前缀</span>
+                            <p className="text-xs text-muted-foreground">必填，支持大小写 BV 前缀</p>
                           )}
                         </div>
 
-                        <div className="form-field">
-                          <label>回复策略</label>
-                          <div
-                            className="segmented-control"
-                            role="group"
-                            aria-label={`指定视频 ${index + 1} 回复策略`}
-                          >
-                            <button
-                              type="button"
-                              className={video.replyPolicy === 'perMessage' ? 'active' : ''}
-                              onClick={() =>
-                                updateTrackedVideo(index, (target) => {
-                                  target.replyPolicy = 'perMessage'
-                                })
-                              }
-                            >
-                              每条消息
-                            </button>
-                            <button
-                              type="button"
-                              className={video.replyPolicy === 'oncePerUser' ? 'active' : ''}
-                              onClick={() =>
-                                updateTrackedVideo(index, (target) => {
-                                  target.replyPolicy = 'oncePerUser'
-                                })
-                              }
-                            >
-                              每个用户一次
-                            </button>
-                          </div>
-                        </div>
+                        <ReplyPolicyField
+                          value={video.replyPolicy}
+                          idPrefix={`tracked-video-${index}`}
+                          onChange={(policy) =>
+                            updateTrackedVideo(index, (target) => {
+                              target.replyPolicy = policy
+                            })
+                          }
+                        />
 
-                        <div className="form-field full-width">
-                          <label htmlFor={`tracked-video-message-${index}`}>独立回复内容</label>
-                          <textarea
+                        <div className="space-y-2 sm:col-span-2">
+                          <Label htmlFor={`tracked-video-message-${index}`}>独立回复内容</Label>
+                          <Textarea
                             id={`tracked-video-message-${index}`}
                             rows={3}
                             placeholder="输入该视频的自动回复内容"
@@ -751,259 +644,303 @@ export default function AutoReplyView() {
                             }}
                             onBlur={saveCurrent}
                           />
-                          <span className="field-hint">{'支持 {用户名}、{时间}'}</span>
+                          <p className="text-xs text-muted-foreground">
+                            {'支持 {用户名}、{时间}'}
+                          </p>
                         </div>
 
-                        <div className="setting-row tracked-video-like-row">
-                          <div className="setting-copy">
-                            <strong>自动点赞该视频评论</strong>
-                            <span>与回复开关和全局视频评论设置相互独立。</span>
-                          </div>
-                          <label className="toggle">
-                            <input
-                              type="checkbox"
-                              checked={video.likeComments}
-                              onChange={(event) => {
-                                const checked = event.target.checked
-                                updateTrackedVideo(index, (target) => {
-                                  target.likeComments = checked
-                                })
-                              }}
-                            />
-                            <span className="toggle-track" />
-                          </label>
-                        </div>
+                        <SettingToggle
+                          className="sm:col-span-2"
+                          label="自动点赞该视频评论"
+                          description="与回复开关和全局视频评论设置相互独立。"
+                          checked={video.likeComments}
+                          onCheckedChange={(checked) =>
+                            updateTrackedVideo(index, (target) => {
+                              target.likeComments = checked
+                            })
+                          }
+                        />
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          ) : null}
-
-          <div className="channel-actions">
-            <button className="btn btn-ghost" type="button" onClick={() => void saveNow()}>
-              <svg
-                width={17}
-                height={17}
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
-                <path d="M17 21v-8H7v8M7 3v5h8" />
-              </svg>
-              保存设置
-            </button>
-
-            <button
-              className="btn btn-ghost"
-              type="button"
-              disabled={previewRunning}
-              onClick={() => void testReply()}
-            >
-              {previewRunning ? (
-                <span className="spinner" aria-hidden="true" />
-              ) : (
-                <svg
-                  width={17}
-                  height={17}
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8Z" />
-                </svg>
-              )}
-              测试回复
-            </button>
-
-            {isCommentChannel ? (
-              <button
-                className="btn btn-accent"
-                type="button"
-                disabled={manualRunning}
-                onClick={() => void manualReply()}
-              >
-                {manualRunning ? (
-                  <span className="spinner" aria-hidden="true" />
-                ) : (
-                  <svg
-                    width={17}
-                    height={17}
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path d="m13 2-2 8h7l-7 12 2-8H6l7-12Z" />
-                  </svg>
-                )}
-                {activeChannel === 'dynamic' ? '立即处理动态评论' : '立即处理视频评论'}
-              </button>
-            ) : null}
+                  )
+                })}
+              </div>
+            )}
           </div>
+        ) : null}
 
-          {actionResult ? (
-            <div className={`action-result${actionError ? ' error' : ''}`} role="status">
-              {actionResult}
-            </div>
+        <div className="flex flex-wrap gap-2 border-t pt-5">
+          <Button variant="outline" disabled={previewRunning} onClick={() => void testReply()}>
+            {previewRunning ? <Loader2 className="animate-spin" /> : <MessageSquare />}
+            测试回复
+          </Button>
+          {activeChannel === 'comment' || activeChannel === 'dynamic' ? (
+            <Button variant="brand" disabled={manualRunning} onClick={() => void manualReply()}>
+              {manualRunning ? <Loader2 className="animate-spin" /> : <Zap />}
+              {activeChannel === 'dynamic' ? '立即处理动态评论' : '立即处理视频评论'}
+            </Button>
           ) : null}
         </div>
+
+        {actionResult ? (
+          <StatusBar tone={actionError ? 'error' : 'success'} className="whitespace-pre-wrap">
+            {actionResult}
+          </StatusBar>
+        ) : null}
       </div>
     )
   }
 
   const renderHistory = (data: AutoReplySettings) => {
     const items = data.history.filter((item) => item.source === activeChannel)
-    return (
-      <section className="history-surface">
-        <div className="section-heading history-heading">
-          <div>
-            <h2>{activeMeta.label}回复记录</h2>
-            <p>最近保存的当前渠道回复。</p>
-          </div>
-          <span className="count-badge">{items.length}</span>
-        </div>
 
+    return (
+      <SectionCard
+        title={`${activeMeta.label}回复记录`}
+        description="最近保存的当前渠道回复。"
+        actions={<Badge variant="secondary">{items.length}</Badge>}
+      >
         {items.length === 0 ? (
-          <div className="empty-history">
-            <svg
-              width={42}
-              height={42}
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.5}
-            >
-              <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8Z" />
-            </svg>
-            <span>暂无回复记录</span>
-          </div>
+          <EmptyState
+            icon={History}
+            title="暂无回复记录"
+            description="开启自动回复后，这里会显示当前渠道最近处理的记录。"
+          />
         ) : (
-          <div className="history-list">
+          <div className="divide-y">
             {items.map((item, index) => (
-              <article key={`${item.time}-${index}`} className="history-item">
-                <div className="history-meta">
-                  <strong>{item.user}</strong>
-                  <time>{item.time}</time>
+              <div key={`${item.time}-${index}`} className="space-y-1.5 py-3 first:pt-0 last:pb-0">
+                <div className="flex items-baseline justify-between gap-4">
+                  <span className="truncate text-sm font-medium">{item.user}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{item.time}</span>
                 </div>
-                <p>{item.message}</p>
-              </article>
+                <p className="text-sm break-words text-muted-foreground">{item.message}</p>
+              </div>
             ))}
           </div>
         )}
-      </section>
+      </SectionCard>
     )
   }
 
   return (
-    <div className="auto-reply-page">
-      <header className="page-header">
-        <div className="header-content">
-          <button
-            className="icon-button"
-            type="button"
-            aria-label="返回首页"
-            title="返回首页"
-            onClick={() => void navigate('/')}
-          >
-            <svg
-              width={20}
-              height={20}
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
+    <ViewShell
+      title="自动回复"
+      subtitle="配置各渠道的自动回复策略、点赞与指定视频"
+      actions={
+        <>
+          {saveState === 'idle' ? null : (
+            <span
+              className={cn(
+                'text-xs',
+                saveState === 'saved' && 'text-success',
+                saveState === 'error' && 'text-destructive',
+                saveState === 'saving' && 'text-muted-foreground',
+              )}
             >
-              <path d="M19 12H5M12 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <h1>自动回复</h1>
-          <span className={`save-state ${saveState}`}>{SAVE_STATE_LABELS[saveState]}</span>
-        </div>
-      </header>
-
-      <main className="page-main">
-        {notice ? <StatusBar tone={notice.tone}>{notice.text}</StatusBar> : null}
-
-        {isPlus ? null : (
-          <section className="plus-lock" role="status">
-            <span className="plus-lock-icon">
-              <IconLock size={18} />
+              {SAVE_STATE_LABELS[saveState]}
             </span>
-            <div className="plus-lock-text">
-              <strong>自动回复需要先激活 Plus</strong>
-              <span>激活后可使用自动回复和自动点赞；当前设置仍可查看和编辑。</span>
-            </div>
-            <button className="btn btn-accent" type="button" onClick={() => setKeyDialog(true)}>
-              <IconKey size={16} />
-              激活 Plus
-            </button>
-          </section>
-        )}
+          )}
+          <Button
+            variant="default"
+            size="sm"
+            disabled={!settings || loading}
+            onClick={() => void saveNow()}
+          >
+            <Save />
+            保存设置
+          </Button>
+        </>
+      }
+    >
+      {notice ? <StatusBar tone={notice.tone}>{notice.text}</StatusBar> : null}
 
-        {loading ? (
-          <section className="loading-panel" aria-live="polite">
-            <span className="spinner spinner-lg" aria-hidden="true" />
-            <span>正在加载自动回复设置</span>
-          </section>
-        ) : loadError ? (
-          <section className="error-panel" role="alert">
-            <strong>设置加载失败</strong>
-            <span>{loadError}</span>
-            <button className="btn btn-ghost" type="button" onClick={() => void load()}>
+      {isPlus ? null : (
+        <div className="flex flex-wrap items-center gap-4 rounded-xl border border-warning/30 bg-warning-tint px-4 py-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-background text-warning">
+            <Lock className="size-4" />
+          </span>
+          <div className="min-w-0 flex-1 space-y-0.5">
+            <p className="text-sm font-medium">自动回复需要先激活 Plus</p>
+            <p className="text-xs text-muted-foreground">
+              激活后可使用自动回复和自动点赞；当前设置仍可查看和编辑。
+            </p>
+          </div>
+          <Button variant="brand" size="sm" onClick={() => setKeyDialog(true)}>
+            <KeyRound />
+            激活 Plus
+          </Button>
+        </div>
+      )}
+
+      {loading ? (
+        <SectionCard>
+          <div className="space-y-4">
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </div>
+        </SectionCard>
+      ) : loadError ? (
+        <SectionCard title="设置加载失败">
+          <div className="space-y-4">
+            <StatusBar tone="error">{loadError}</StatusBar>
+            <Button variant="outline" onClick={() => void load()}>
+              <RefreshCw />
               重试
-            </button>
-          </section>
-        ) : settings ? (
-          <>
-            <section className="settings-surface">
-              {renderOverview(settings)}
-              {renderChannelPanel(settings)}
-            </section>
-            {renderHistory(settings)}
-          </>
-        ) : null}
-      </main>
+            </Button>
+          </div>
+        </SectionCard>
+      ) : settings ? (
+        <>
+          <SectionCard title="运行设置" description="统一控制自动回复服务的运行状态和检查频率。">
+            <div className="space-y-5">
+              <SettingToggle
+                label="自动回复总开关"
+                description="关闭后暂停自动回复；视频、动态及指定视频点赞仍按各自设置执行。"
+                checked={settings.enabled}
+                onCheckedChange={(checked) =>
+                  update((draft) => {
+                    draft.enabled = checked
+                  })
+                }
+              />
+
+              <Separator />
+
+              <SettingToggle
+                label="开机自启"
+                description="系统启动后在后台运行。"
+                checked={autostartEnabled}
+                onCheckedChange={() => void toggleAutostart()}
+              />
+
+              <Separator />
+
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="poll-interval">检查间隔（秒）</Label>
+                  <Input
+                    id="poll-interval"
+                    type="number"
+                    min={MIN_INTERVAL}
+                    max={MAX_INTERVAL}
+                    inputMode="numeric"
+                    value={intervalText}
+                    onChange={(event) => setIntervalText(event.target.value)}
+                    onBlur={commitInterval}
+                  />
+                  {isInRange(intervalText, MIN_INTERVAL, MAX_INTERVAL) ? (
+                    <p className="text-xs text-muted-foreground">
+                      完整补扫视频评论、动态评论、私信和关注的周期。
+                    </p>
+                  ) : (
+                    <p className="text-xs text-destructive">
+                      请输入 {MIN_INTERVAL}–{MAX_INTERVAL} 之间的秒数。
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="fast-interval">快速通道间隔（秒）</Label>
+                  <Input
+                    id="fast-interval"
+                    type="number"
+                    min={MIN_FAST_INTERVAL}
+                    max={MAX_FAST_INTERVAL}
+                    inputMode="numeric"
+                    value={fastIntervalText}
+                    onChange={(event) => setFastIntervalText(event.target.value)}
+                    onBlur={commitFastInterval}
+                  />
+                  {isInRange(fastIntervalText, MIN_FAST_INTERVAL, MAX_FAST_INTERVAL) ? (
+                    <p className="text-xs text-muted-foreground">
+                      只抓取每个评论目标的最新一页，用于新评论秒回；私信和关注仍按检查间隔处理。
+                    </p>
+                  ) : (
+                    <p className="text-xs text-destructive">
+                      请输入 {MIN_FAST_INTERVAL}–{MAX_FAST_INTERVAL} 之间的秒数。
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </SectionCard>
+
+          <SectionCard title="分渠道配置" description="回复内容和回复策略互不影响。">
+            <Tabs
+              value={activeChannel}
+              onValueChange={(value) => setActiveChannel(value as MsgSource)}
+            >
+              <TabsList className="w-full">
+                {CHANNEL_TABS.map((tab) => (
+                  <TabsTrigger
+                    key={tab.key}
+                    value={tab.key}
+                    className="flex-col gap-0.5 py-1.5 leading-tight"
+                  >
+                    <span>{tab.label}</span>
+                    <span
+                      className={cn(
+                        'text-[11px] font-normal',
+                        isChannelEnabled(settings, tab.key)
+                          ? 'text-success'
+                          : 'text-muted-foreground',
+                      )}
+                    >
+                      {isChannelEnabled(settings, tab.key) ? '已开启' : '已关闭'}
+                    </span>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+
+              <TabsContent value={activeChannel} className="pt-5">
+                {renderChannelPanel(settings)}
+              </TabsContent>
+            </Tabs>
+          </SectionCard>
+
+          {renderHistory(settings)}
+        </>
+      ) : null}
 
       {keyDialog ? (
         <Dialog
           title="输入激活密钥"
+          description="在爱发电购买 Plus 方案后会收到激活码，粘贴到下方即可解锁自动回复与自动点赞。"
           onClose={() => setKeyDialog(false)}
           footer={
             <>
-              <button className="btn btn-ghost" onClick={() => setKeyDialog(false)}>
+              <Button variant="outline" onClick={() => setKeyDialog(false)}>
                 取消
-              </button>
-              <button
-                className="btn btn-accent"
+              </Button>
+              <Button
+                variant="brand"
                 onClick={() => void submitLicense()}
                 disabled={!licenseKey.trim() || keySubmitting}
               >
                 {keySubmitting ? '验证中...' : '激活'}
-              </button>
+              </Button>
             </>
           }
         >
-          <p className="dialog-desc">
-            在爱发电购买 Plus 方案后会收到激活码，粘贴到下方即可解锁自动回复与自动点赞。
-          </p>
-          <input
-            className="input"
-            value={licenseKey}
-            placeholder="请输入激活密钥"
-            autoFocus
-            onChange={(event) => setLicenseKey(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') void submitLicense()
-            }}
-          />
+          <div className="space-y-2">
+            <Label htmlFor="license-key">激活密钥</Label>
+            <Input
+              id="license-key"
+              value={licenseKey}
+              placeholder="请输入激活密钥"
+              autoFocus
+              onChange={(event) => setLicenseKey(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void submitLicense()
+              }}
+            />
+          </div>
           {keyError ? <StatusBar tone="error">{keyError}</StatusBar> : null}
         </Dialog>
       ) : null}
-    </div>
+    </ViewShell>
   )
 }

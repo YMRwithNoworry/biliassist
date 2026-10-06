@@ -6,7 +6,8 @@ BiliAssist 是使用 Tauri 2 和 React 构建的 B站账号管理桌面应用：
 
 ## 技术栈
 
-- 界面：React 19 + TypeScript + Vite（src/），路由使用 react-router-dom 的 HashRouter
+- 界面：React 19 + TypeScript + Vite（src/）+ Tailwind CSS v4 + shadcn/ui（new-york）
+- UI 组件：shadcn 原件在 src/components/ui/，应用级封装在 src/components/，图标统一 lucide-react，路由用 react-router-dom 的 HashRouter
 - 桌面壳：Tauri 2（src-tauri/），前端只能通过 src/lib/ipc.ts 里的 `api.*` 调用 `#[tauri::command]`
 - 异步：Tokio（tauri::async_runtime）
 - 网络：reqwest
@@ -32,6 +33,9 @@ tauri-build 会把 dist/ 内嵌进二进制，因此改完前端必须先 `npm r
 
 - src/main.tsx、src/App.tsx：React 入口与应用外壳（导航、登录守卫、激活状态）。
 - src/lib/ipc.ts：唯一的 IPC 契约，前端所有后端调用都经过它。
+- src/index.css：Tailwind 入口与全部设计令牌。
+- src/components/ui/：shadcn/ui 组件源码，需要时直接改，不要另起一套。
+- src/components/：应用级封装（ViewShell、SectionCard、StatCard、EmptyState、StatusBar、Dialog、Sidebar、ThemeToggle）。
 - src/views/：登录、概览、账号管理、自动回复、支持项目等页面。
 - src-tauri/src/main.rs：二进制入口。
 - src-tauri/src/lib.rs：Tauri Builder、插件、托盘、关闭窗口隐藏和服务启动。
@@ -45,13 +49,15 @@ tauri-build 会把 dist/ 内嵌进二进制，因此改完前端必须先 `npm r
 
 新增后端能力时先在 commands.rs 暴露命令，再在 src/lib/ipc.ts 补上类型化封装，界面层不直接调用 `invoke`。
 
-## 主题
+## 主题与 UI 约定
 
 - 主题状态在 src/state/theme.tsx，支持 light / dark / system，默认跟随系统，选择写入 localStorage 的 biliassist-theme。
 - index.html 里有一段内联脚本，在首屏渲染前就把 <html data-theme> 设好，避免夜间模式刷新时闪一帧白屏。
-- 颜色只能通过 src/styles/base.css 的语义变量引用：浅色值写在 :root，夜间值写在 [data-theme='dark']，两处必须成对维护。
-- 组件样式里不要出现写死的颜色，否则夜间模式下会漏色；彩色底上的文字用 --accent-contrast，不要用 --surface-white。
-- 切换按钮是 src/components/ThemeToggle.tsx，出现在侧边栏底部和登录页右上角。
+- 所有颜色只能来自 src/index.css 的语义令牌（浅色在 :root，夜间在 [data-theme='dark']），Tailwind 类名形如 bg-card、text-muted-foreground、border-border、bg-brand。
+- 组件里禁止写死颜色（bg-white、text-white、#xxx、bg-[#...]）；品牌红底上的文字用 text-brand-foreground，否则夜间模式会糊。
+- 页面骨架统一用 ViewShell（固定页头 + 可滚动内容区），分组用 SectionCard，统计用 StatCard，空态用 EmptyState，行内提示用 StatusBar，对话框用 @/components/Dialog。
+- 图标统一 lucide-react；瞬时反馈用 sonner 的 toast，需要用户留意的持久错误用 StatusBar。
+- 新增依赖前先确认 src/components/ui 里的 shadcn 原件不够用；shadcn 组件是源码，可以直接改。
 
 ## 自动回复
 

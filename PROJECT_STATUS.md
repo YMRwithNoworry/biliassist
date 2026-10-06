@@ -21,7 +21,7 @@
 
 - Rust 2021
 - Tauri 2（tray-icon、single-instance、autostart 插件）
-- React 19 / TypeScript / Vite
+- React 19 / TypeScript / Vite / Tailwind CSS v4 / shadcn/ui
 - Tokio / reqwest
 - Serde
 - AES-256-GCM
@@ -29,8 +29,10 @@
 
 ## 目录
 
-    src/                     # React 前端
+    src/                     # React 前端（Tailwind v4 + shadcn/ui）
     ├── App.tsx
+    ├── index.css            # 设计令牌
+    ├── components/ui/       # shadcn/ui 组件
     ├── lib/ipc.ts
     └── views/
 

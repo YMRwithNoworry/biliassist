@@ -18,7 +18,7 @@ BiliAssist 是使用 Tauri 2 与 React 构建的 B站账号管理与自动回复
 
 ## 技术栈
 
-- 界面：React 19 + TypeScript + Vite（`src/`）
+- 界面：React 19 + TypeScript + Vite + Tailwind CSS v4 + shadcn/ui（`src/`）
 - 桌面壳与 IPC：Tauri 2（`src-tauri/`，`#[tauri::command]` 暴露后端能力）
 - 异步运行时：Tokio
 - 网络：reqwest

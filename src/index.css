@@ -1,0 +1,170 @@
+/* 只扫描前端源码与入口 HTML：项目里还有 Rust、文档和生成物，没必要让 Tailwind 去猜 */
+@import 'tailwindcss' source(none);
+@source '../index.html';
+@source './**/*.{ts,tsx}';
+@import 'tw-animate-css';
+
+/* 主题开关写在 <html data-theme> 上，暗色变体按这个属性匹配 */
+@custom-variant dark (&:is([data-theme='dark'] *));
+
+:root {
+  --radius: 0.75rem;
+
+  --background: #ffffff;
+  --foreground: #222222;
+  --card: #ffffff;
+  --card-foreground: #222222;
+  --popover: #ffffff;
+  --popover-foreground: #222222;
+  --primary: #222222;
+  --primary-foreground: #ffffff;
+  --secondary: #f2f2f2;
+  --secondary-foreground: #222222;
+  --muted: #f7f7f7;
+  --muted-foreground: #6a6a6a;
+  --accent: #f2f2f2;
+  --accent-foreground: #222222;
+  --destructive: #c13515;
+  --destructive-foreground: #ffffff;
+  --border: #dddddd;
+  --input: #dddddd;
+  --ring: #222222;
+
+  --brand: #ff385c;
+  --brand-foreground: #ffffff;
+  --brand-strong: #e00b41;
+
+  --success: #0f7b3f;
+  --success-tint: #eaf7ef;
+  --warning: #9a6400;
+  --warning-tint: #fdf4e3;
+  --info: #0b6bcb;
+  --info-tint: #eaf3fd;
+
+  --sidebar: #ffffff;
+  --sidebar-foreground: #222222;
+  --sidebar-accent: #f2f2f2;
+  --sidebar-border: #dddddd;
+
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --background: #1b1e24;
+  --foreground: #eceef2;
+  --card: #1b1e24;
+  --card-foreground: #eceef2;
+  --popover: #22262d;
+  --popover-foreground: #eceef2;
+  --primary: #eceef2;
+  --primary-foreground: #1b1e24;
+  --secondary: #262a31;
+  --secondary-foreground: #eceef2;
+  --muted: #121419;
+  --muted-foreground: #9aa1ad;
+  --accent: #262a31;
+  --accent-foreground: #eceef2;
+  --destructive: #ff7a66;
+  --destructive-foreground: #1b1e24;
+  --border: #2c313a;
+  --input: #2c313a;
+  --ring: #6b7280;
+
+  --success: #4ec97f;
+  --success-tint: rgba(78, 201, 127, 0.14);
+  --warning: #e0a63c;
+  --warning-tint: rgba(224, 166, 60, 0.14);
+  --info: #6cb6ff;
+  --info-tint: rgba(108, 182, 255, 0.14);
+
+  --sidebar: #1b1e24;
+  --sidebar-foreground: #eceef2;
+  --sidebar-accent: #262a31;
+  --sidebar-border: #2c313a;
+
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-brand-strong: var(--brand-strong);
+
+  --color-success: var(--success);
+  --color-success-tint: var(--success-tint);
+  --color-warning: var(--warning);
+  --color-warning-tint: var(--warning-tint);
+  --color-info: var(--info);
+  --color-info-tint: var(--info-tint);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-border: var(--sidebar-border);
+
+  --font-sans: -apple-system, system-ui, Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    overflow: hidden;
+  }
+
+  /* 桌面端滚动条跟随主题，避免默认亮色滚动条出现在夜间模式里 */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    background-clip: content-box;
+    border: 3px solid transparent;
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}

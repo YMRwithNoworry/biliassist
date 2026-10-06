@@ -1,43 +1,42 @@
-import { useEffect, type ReactNode } from 'react'
-import { IconClose } from './icons'
+import type { ReactNode } from 'react'
+import {
+  Dialog as DialogRoot,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
+/** 应用统一的表单对话框：保持「传 children + footer」的简单用法，底层是 shadcn Dialog。 */
 export default function Dialog({
   title,
+  description,
   children,
   footer,
   onClose,
 }: {
   title: string
+  description?: string
   children: ReactNode
   footer?: ReactNode
   onClose: () => void
 }) {
-  // Esc 关闭符合桌面端习惯，键盘用户不必移动鼠标到遮罩。
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
-
   return (
-    <div
-      className="dialog-overlay"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose()
+    <DialogRoot
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose()
       }}
     >
-      <div className="dialog-card" role="dialog" aria-modal="true" aria-label={title}>
-        <div className="dialog-header">
-          <h2 className="dialog-title">{title}</h2>
-          <button className="dialog-close" onClick={onClose} aria-label="关闭">
-            <IconClose size={18} />
-          </button>
-        </div>
-        <div className="dialog-body">{children}</div>
-        {footer ? <div className="dialog-footer">{footer}</div> : null}
-      </div>
-    </div>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          {description ? <DialogDescription>{description}</DialogDescription> : null}
+        </DialogHeader>
+        <div className="space-y-4">{children}</div>
+        {footer ? <DialogFooter>{footer}</DialogFooter> : null}
+      </DialogContent>
+    </DialogRoot>
   )
 }

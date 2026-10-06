@@ -15,8 +15,11 @@
 
 ## 代码结构
 
-    src/                    # React 前端
+    src/                    # React 前端（Tailwind v4 + shadcn/ui）
     ├── App.tsx             # 外壳、导航与登录守卫
+    ├── index.css           # Tailwind 入口与设计令牌
+    ├── components/ui/      # shadcn/ui 组件源码
+    ├── components/         # 应用级封装（ViewShell、SectionCard 等）
     ├── lib/ipc.ts          # IPC 契约
     └── views/              # 页面
 

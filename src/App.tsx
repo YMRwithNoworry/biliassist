@@ -1,16 +1,17 @@
+import { Loader2, TriangleAlert } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { HashRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
-import Sidebar from './components/Sidebar'
-import { IconAlert } from './components/icons'
-import { errorMessage } from './lib/ipc'
-import { AuthProvider, useAuth } from './state/auth'
-import AccountsView from './views/AccountsView'
-import AuthPage from './views/AuthPage'
-import AutoReplyView from './views/AutoReplyView'
-import DashboardView from './views/DashboardView'
-import LoginView from './views/LoginView'
-import SponsorView from './views/SponsorView'
-import './styles/base.css'
+import Sidebar from '@/components/Sidebar'
+import { Button } from '@/components/ui/button'
+import { Toaster } from '@/components/ui/sonner'
+import { errorMessage } from '@/lib/ipc'
+import { AuthProvider, useAuth } from '@/state/auth'
+import AccountsView from '@/views/AccountsView'
+import AuthPage from '@/views/AuthPage'
+import AutoReplyView from '@/views/AutoReplyView'
+import DashboardView from '@/views/DashboardView'
+import LoginView from '@/views/LoginView'
+import SponsorView from '@/views/SponsorView'
 
 const MAX_ATTEMPTS = 3
 const RESTORE_TIMEOUT = 10_000
@@ -38,24 +39,24 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 function BootLoading() {
   return (
-    <div className="boot-screen">
-      <span className="spinner spinner-lg" />
-      <p className="boot-desc">加载中...</p>
+    <div className="flex h-full flex-col items-center justify-center gap-3">
+      <Loader2 className="size-8 animate-spin text-muted-foreground" />
+      <p className="text-sm text-muted-foreground">加载中...</p>
     </div>
   )
 }
 
 function BootError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="boot-screen">
-      <span className="boot-icon boot-icon-error">
-        <IconAlert size={30} strokeWidth={1.5} />
+    <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
+      <span className="flex size-14 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+        <TriangleAlert className="size-7" />
       </span>
-      <h1 className="boot-title boot-title-error">启动失败</h1>
-      <p className="boot-desc">{message}</p>
-      <button className="btn btn-primary" onClick={onRetry}>
-        重试
-      </button>
+      <div className="space-y-1">
+        <h1 className="text-lg font-semibold">启动失败</h1>
+        <p className="max-w-md text-sm text-muted-foreground">{message}</p>
+      </div>
+      <Button onClick={onRetry}>重试</Button>
     </div>
   )
 }
@@ -68,11 +69,11 @@ function AuthenticatedShell() {
   if (!isAuthenticated) return <Navigate to="/auth" replace />
 
   return (
-    <div className="app-shell">
+    <div className="flex h-full">
       <Sidebar />
-      <div className="main-area">
+      <main className="flex min-w-0 flex-1 flex-col bg-muted">
         <Outlet />
-      </div>
+      </main>
     </div>
   )
 }
@@ -136,6 +137,7 @@ export default function App() {
     <AuthProvider>
       <HashRouter>
         <AppRoutes />
+        <Toaster position="top-center" />
       </HashRouter>
     </AuthProvider>
   )
