@@ -13,8 +13,8 @@ crate-type = ["rlib"]
 
 [dependencies]
 # GPUI Kit 统一提供 GPUI（gpui-pre）、组件库（gpui-component）、基础层（gpui-base）和默认图标资源。
-# gpui-kit 的默认特性已启用 component 与 assets，并附带 font-kit 字体后端。
-gpui-kit = "0.6.4"
+# gpui-kit 的默认特性提供组件、资源与 X11 支持。
+gpui-kit = "0.11.0"
 async-channel = "2"
 auto-launch = "0.5"
 serde = { version = "1", features = ["derive"] }

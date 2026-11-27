@@ -876,13 +876,22 @@ impl AppView {
             .child(div().flex_1())
             .child(
                 h_flex()
+                    .min_w_0()
                     .justify_between()
                     .px_2()
                     .py_2()
                     .child(
                         v_flex()
+                            .min_w_0()
+                            .flex_1()
                             .gap_0p5()
-                            .child(div().text_sm().font_medium().child(auth_email))
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_medium()
+                                    .text_ellipsis()
+                                    .child(auth_email),
+                            )
                             .child(div().text_xs().text_color(theme.muted_foreground).child(
                                 format!(
                                     "{} · v{}",
@@ -894,6 +903,7 @@ impl AppView {
                     .child(
                         Button::new("sign-out")
                             .ghost()
+                            .flex_shrink_0()
                             .icon(IconName::Close)
                             .tooltip("退出登录")
                             .on_click(cx.listener(|this, _, window, cx| this.sign_out(window, cx))),
@@ -906,28 +916,38 @@ impl AppView {
         let theme = cx.theme().clone();
         let active = self.accounts.iter().find(|account| account.active);
         h_flex()
+            .w_full()
+            .min_w_0()
             .min_h_16()
             .px_7()
+            .gap_5()
             .justify_between()
             .border_b_1()
             .border_color(theme.border)
             .child(
                 v_flex()
+                    .min_w_0()
+                    .flex_1()
                     .gap_1()
                     .child(div().text_xl().font_medium().child(self.page.title()))
-                    .child(div().text_sm().text_color(theme.muted_foreground).child(
-                        match self.page {
-                            Page::Auth => "登录后使用本地账号管理功能",
-                            Page::Dashboard => "查看运行状态和常用入口",
-                            Page::Login => "使用哔哩哔哩客户端扫码添加账号",
-                            Page::Accounts => "切换或移除本地加密保存的账号",
-                            Page::AutoReply => "配置评论、动态、私信和关注回复",
-                            Page::Sponsor => "支持项目持续维护",
-                        },
-                    )),
+                    .child(
+                        div()
+                            .min_w_0()
+                            .text_sm()
+                            .text_color(theme.muted_foreground)
+                            .child(match self.page {
+                                Page::Auth => "登录后使用本地账号管理功能",
+                                Page::Dashboard => "查看运行状态和常用入口",
+                                Page::Login => "使用哔哩哔哩客户端扫码添加账号",
+                                Page::Accounts => "切换或移除本地加密保存的账号",
+                                Page::AutoReply => "配置评论、动态、私信和关注回复",
+                                Page::Sponsor => "支持项目持续维护",
+                            }),
+                    ),
             )
             .child(
                 h_flex()
+                    .flex_shrink_0()
                     .gap_2()
                     .child(
                         div()
@@ -941,20 +961,26 @@ impl AppView {
                     )
                     .child(
                         v_flex()
+                            .min_w_0()
+                            .max_w_64()
                             .gap_0p5()
                             .child(
-                                div().text_sm().font_medium().child(
+                                div().text_sm().font_medium().text_ellipsis().child(
                                     active
                                         .map(|account| account.name.clone())
                                         .unwrap_or_else(|| "未登录".into()),
                                 ),
                             )
                             .child(
-                                div().text_xs().text_color(theme.muted_foreground).child(
-                                    active
-                                        .map(|account| account.uid.clone())
-                                        .unwrap_or_else(|| "添加账号后启用自动回复".into()),
-                                ),
+                                div()
+                                    .text_xs()
+                                    .text_color(theme.muted_foreground)
+                                    .text_ellipsis()
+                                    .child(
+                                        active
+                                            .map(|account| account.uid.clone())
+                                            .unwrap_or_else(|| "添加账号后启用自动回复".into()),
+                                    ),
                             ),
                     ),
             )
@@ -985,7 +1011,7 @@ impl AppView {
                 } else {
                     IconName::CircleCheck
                 }))
-                .child(div().text_sm().child(message.clone()))
+                .child(div().min_w_0().flex_1().child(message.clone()))
                 .into_any_element(),
         )
     }
@@ -1182,15 +1208,23 @@ impl AppView {
             .gap_4()
             .child(
                 h_flex()
+                    .w_full()
+                    .min_w_0()
+                    .flex_wrap()
                     .justify_between()
+                    .gap_3()
                     .child(
                         div()
+                            .min_w_0()
+                            .flex_1()
                             .text_sm()
                             .text_color(theme.muted_foreground)
                             .child(format!("本机加密保存 {} 个账号", self.accounts.len())),
                     )
                     .child(
                         h_flex()
+                            .flex_wrap()
+                            .justify_end()
                             .gap_2()
                             .child(
                                 Button::new("upload-cloud")
@@ -1240,6 +1274,7 @@ impl AppView {
                 let uid_delete = account.uid.clone();
                 h_flex()
                     .w_full()
+                    .min_w_0()
                     .gap_4()
                     .p_4()
                     .border_1()
@@ -1252,6 +1287,7 @@ impl AppView {
                     .child(
                         div()
                             .size_10()
+                            .flex_shrink_0()
                             .rounded_full()
                             .bg(theme.secondary)
                             .flex()
@@ -1261,12 +1297,22 @@ impl AppView {
                     )
                     .child(
                         v_flex()
+                            .min_w_0()
                             .flex_1()
                             .gap_1()
                             .child(
                                 h_flex()
+                                    .min_w_0()
+                                    .flex_wrap()
+                                    .items_center()
                                     .gap_2()
-                                    .child(div().font_medium().child(account.name.clone()))
+                                    .child(
+                                        div()
+                                            .min_w_0()
+                                            .text_ellipsis()
+                                            .font_medium()
+                                            .child(account.name.clone()),
+                                    )
                                     .when(account.active, |row| {
                                         row.child(
                                             div()
@@ -1280,14 +1326,23 @@ impl AppView {
                                         )
                                     }),
                             )
-                            .child(div().text_sm().text_color(theme.muted_foreground).child(
-                                format!("UID {} · 添加于 {}", account.uid, account.created_at),
-                            )),
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .text_sm()
+                                    .text_color(theme.muted_foreground)
+                                    .text_ellipsis()
+                                    .child(format!(
+                                        "UID {} · 添加于 {}",
+                                        account.uid, account.created_at
+                                    )),
+                            ),
                     )
                     .when(!account.active, |row| {
                         row.child(
                             Button::new(("activate-account", index))
                                 .outline()
+                                .flex_shrink_0()
                                 .label("设为当前")
                                 .disabled(self.busy)
                                 .on_click(cx.listener(move |this, _, window, cx| {
@@ -1298,6 +1353,7 @@ impl AppView {
                     .child(
                         Button::new(("delete-account", index))
                             .ghost()
+                            .flex_shrink_0()
                             .icon(IconName::Close)
                             .tooltip("删除账号")
                             .disabled(self.busy)
@@ -1312,6 +1368,7 @@ impl AppView {
     fn render_reply_policy(&self, cx: &mut Context<Self>) -> AnyElement {
         let policy = self.settings.channel(self.current_source()).reply_policy;
         h_flex()
+            .flex_wrap()
             .gap_2()
             .child(
                 Button::new("policy-per-message")
@@ -1350,9 +1407,16 @@ impl AppView {
             .border_color(theme.border)
             .child(
                 h_flex()
+                    .w_full()
+                    .min_w_0()
+                    .flex_wrap()
+                    .items_center()
+                    .gap_4()
                     .justify_between()
                     .child(
                         v_flex()
+                            .min_w_0()
+                            .flex_1()
                             .gap_1()
                             .child(div().font_medium().child("指定视频"))
                             .child(
@@ -1365,6 +1429,7 @@ impl AppView {
                     .child(
                         Button::new("add-tracked-video")
                             .outline()
+                            .flex_shrink_0()
                             .icon(IconName::Plus)
                             .label("添加视频")
                             .on_click(cx.listener(|this, _, window, cx| {
@@ -1396,6 +1461,9 @@ impl AppView {
                     .border_color(theme.border)
                     .child(
                         h_flex()
+                            .min_w_0()
+                            .flex_wrap()
+                            .items_center()
                             .justify_between()
                             .child(div().font_medium().child(format!("视频 {}", index + 1)))
                             .child(
@@ -1425,9 +1493,12 @@ impl AppView {
                     .child(
                         h_flex()
                             .w_full()
+                            .min_w_0()
+                            .flex_wrap()
                             .gap_4()
                             .child(
                                 v_flex()
+                                    .min_w_0()
                                     .flex_1()
                                     .gap_2()
                                     .child(div().text_sm().font_medium().child("BV 号"))
@@ -1435,11 +1506,13 @@ impl AppView {
                             )
                             .child(
                                 v_flex()
+                                    .min_w_0()
                                     .flex_1()
                                     .gap_2()
                                     .child(div().text_sm().font_medium().child("回复策略"))
                                     .child(
                                         h_flex()
+                                            .flex_wrap()
                                             .gap_2()
                                             .child(
                                                 Button::new(("tracked-policy-message", index))
@@ -1516,10 +1589,16 @@ impl AppView {
             .gap_6()
             .child(
                 h_flex()
+                    .w_full()
+                    .min_w_0()
+                    .flex_wrap()
+                    .items_center()
                     .justify_between()
                     .gap_5()
                     .child(
                         v_flex()
+                            .min_w_0()
+                            .flex_1()
                             .gap_1()
                             .child(div().font_medium().child("自动回复总开关"))
                             .child(
@@ -1540,10 +1619,16 @@ impl AppView {
             )
             .child(
                 h_flex()
+                    .w_full()
+                    .min_w_0()
+                    .flex_wrap()
+                    .items_center()
                     .justify_between()
                     .gap_5()
                     .child(
                         v_flex()
+                            .min_w_0()
+                            .flex_1()
                             .gap_1()
                             .child(div().font_medium().child("检查间隔"))
                             .child(
@@ -1553,7 +1638,11 @@ impl AppView {
                                     .child("范围 1 至 3600 秒；新评论由秒级快速检查实时回复"),
                             ),
                     )
-                    .child(NumberInput::new(&self.interval_input).w(px(160.))),
+                    .child(
+                        NumberInput::new(&self.interval_input)
+                            .w(px(160.))
+                            .flex_shrink_0(),
+                    ),
             )
             .child(
                 TabBar::new("reply-channel-tabs")
@@ -1578,9 +1667,15 @@ impl AppView {
                     .border_color(theme.border)
                     .child(
                         h_flex()
+                            .w_full()
+                            .min_w_0()
+                            .flex_wrap()
+                            .items_center()
                             .justify_between()
                             .child(
                                 v_flex()
+                                    .min_w_0()
+                                    .flex_1()
                                     .gap_1()
                                     .child(
                                         div()
@@ -1606,9 +1701,15 @@ impl AppView {
                     .when_some(self.current_like_comments(), |section, like_comments| {
                         section.child(
                             h_flex()
+                                .w_full()
+                                .min_w_0()
+                                .flex_wrap()
+                                .items_center()
                                 .justify_between()
                                 .child(
                                     v_flex()
+                                        .min_w_0()
+                                        .flex_1()
                                         .gap_1()
                                         .child(div().text_sm().font_medium().child("自动点赞评论"))
                                         .child(
@@ -1656,6 +1757,8 @@ impl AppView {
             )
             .child(
                 h_flex()
+                    .w_full()
+                    .flex_wrap()
                     .gap_3()
                     .child(
                         Button::new("save-auto-reply")
@@ -1696,9 +1799,14 @@ impl AppView {
                     .border_color(theme.border)
                     .child(
                         h_flex()
+                            .min_w_0()
+                            .flex_wrap()
+                            .items_center()
                             .justify_between()
                             .child(
                                 div()
+                                    .min_w_0()
+                                    .text_ellipsis()
                                     .font_medium()
                                     .child(format!("{}回复记录", source.display_name())),
                             )
@@ -1733,10 +1841,11 @@ impl AppView {
                                         div()
                                             .text_xs()
                                             .text_color(theme.muted_foreground)
+                                            .flex_shrink_0()
                                             .child(item.time.clone()),
                                     ),
                             )
-                            .child(div().text_sm().child(item.message.clone()))
+                            .child(div().min_w_0().text_sm().child(item.message.clone()))
                     })),
             )
             .into_any_element()
