@@ -3,44 +3,28 @@
 ## 开发环境
 
 - Rust stable
-- Node.js 20+（前端构建与 Tauri CLI）
 - Git
-- Linux 上所需的 Tauri 系统库（WebKitGTK 4.1、GTK3、librsvg 等）
+- Linux 上所需的 GPUI 系统库
 
 克隆后从仓库根目录运行：
 
-    npm install
-    npm run tauri:dev
     cargo check --locked --manifest-path src-tauri/Cargo.toml
+    cargo run --manifest-path src-tauri/Cargo.toml
 
 ## 代码结构
 
-    src/                    # React 前端（Tailwind v4 + shadcn/ui）
-    ├── App.tsx             # 外壳、导航与登录守卫
-    ├── index.css           # Tailwind 入口与设计令牌
-    ├── components/ui/      # shadcn/ui 组件源码
-    ├── components/         # 应用级封装（ViewShell、SectionCard 等）
-    ├── lib/ipc.ts          # IPC 契约
-    └── views/              # 页面
-
     src-tauri/
     ├── Cargo.toml
-    ├── tauri.conf.json
     └── src/
-        ├── commands.rs     # 全部 #[tauri::command]
-        ├── auth.rs         # Supabase 认证
-        ├── cloud.rs        # 云同步
-        ├── platform.rs     # 激活与开发模式判断
+        ├── ui/             # GPUI 原生界面、认证与平台能力
         ├── auto_reply/     # 自动回复处理器和持久状态
         ├── bilibili.rs     # B站扫码登录接口
         ├── storage.rs      # 本地加密账号存储
-        ├── lib.rs          # Tauri Builder、托盘与初始化
+        ├── lib.rs          # 应用初始化
         └── main.rs         # 二进制入口
 
 ## 提交前检查
 
-    npm run build
-    npm run typecheck
     cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
     cargo check --locked --manifest-path src-tauri/Cargo.toml
     cargo test --locked --manifest-path src-tauri/Cargo.toml

@@ -1,13 +1,10 @@
-use crate::auth::{self, AuthSession, SUPABASE_KEY, SUPABASE_URL};
+use super::auth::{self, AuthSession, SUPABASE_KEY, SUPABASE_URL};
 use crate::auto_reply;
 use crate::auto_reply::models::AutoReplySettings;
 use crate::storage::{self, Account};
 use reqwest::{RequestBuilder, Response};
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct CloudDownload {
     pub accounts: Vec<Account>,
     pub settings: Option<AutoReplySettings>,
