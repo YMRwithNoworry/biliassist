@@ -78,6 +78,13 @@ jobs:
           sed -i '/^name = "bilibili-account-manager"$/ { n; s/^version = ".*"$/version = "'"$NEW_VERSION"'"/; }' src-tauri/Cargo.lock
           sed -i -E "0,/^version = \"[^\"]+\"/s//version = \"${NEW_VERSION}\"/" src-tauri/Cargo.toml
 
+          cargo metadata --locked --manifest-path src-tauri/Cargo.toml --no-deps --format-version 1 > /dev/null
+          GPUI_KIT_VERSION=$(sed -n 's/^gpui-kit = "\([^"]*\)"/\1/p' src-tauri/Cargo.toml)
+          test -n "$GPUI_KIT_VERSION"
+          cargo tree --locked --manifest-path src-tauri/Cargo.toml --package gpui-kit --depth 0 \
+            | grep -Fxq "gpui-kit v${GPUI_KIT_VERSION}"
+          git diff --check
+
           git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock
           git commit -m "chore(release): 发布 v${NEW_VERSION} [skip ci]"
           git push origin HEAD:${{ github.ref_name }}
@@ -125,7 +132,7 @@ jobs:
             artifact: windows
           - os: macos-latest
             artifact: macos
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             artifact: linux
     runs-on: ${{ matrix.os }}
     steps:
@@ -143,7 +150,34 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc g++ libayatana-appindicator3-dev libfontconfig-dev libglib2.0-dev libgtk-3-dev libssl-dev libvulkan1 libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libzstd-dev
+          sudo apt-get install -y \
+            clang \
+            gcc \
+            g++ \
+            pkg-config \
+            libasound2-dev \
+            libayatana-appindicator3-dev \
+            libfontconfig-dev \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libssl-dev \
+            libvulkan1 \
+            libwayland-dev \
+            libwebkit2gtk-4.1-dev \
+            libx11-xcb-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libzstd-dev \
+            vulkan-validationlayers
+
+      - name: 验证 GPUI Kit 锁定版本
+        shell: bash
+        run: |
+          set -euo pipefail
+          GPUI_KIT_VERSION=$(sed -n 's/^gpui-kit = "\([^"]*\)"/\1/p' src-tauri/Cargo.toml)
+          test -n "$GPUI_KIT_VERSION"
+          cargo tree --locked --manifest-path src-tauri/Cargo.toml --package gpui-kit --depth 0 \
+            | grep -Fxq "gpui-kit v${GPUI_KIT_VERSION}"
 
       - name: 构建原生应用
         shell: bash
@@ -227,6 +261,32 @@ jobs:
           cp packaging/portable/README-linux.txt "$PORTABLE_DIR/README.txt"
           tar -C dist -czf "dist/biliassist-${VERSION}-linux-${ARCH}-portable.tar.gz" \
             "$PORTABLE_NAME"
+
+      - name: 检查发布产物
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          ARCH=$(uname -m)
+          case "$RUNNER_OS" in
+            Windows)
+              test -f "dist/biliassist-${VERSION}-windows-x86_64-portable.zip"
+              test -f "dist/biliassist-${VERSION}-windows-x86_64-setup.exe"
+              ;;
+            macOS)
+              test -f "dist/biliassist-${VERSION}-macos-${ARCH}-portable.zip"
+              test -f "dist/biliassist-${VERSION}-macos-${ARCH}.dmg"
+              ;;
+            Linux)
+              test -f "dist/biliassist-${VERSION}-linux-${ARCH}-portable.tar.gz"
+              ;;
+            *)
+              echo "不支持的运行平台：${RUNNER_OS}" >&2
+              exit 1
+              ;;
+          esac
+          find dist -maxdepth 1 -type f -name 'biliassist-*' -print
 
       - uses: actions/upload-artifact@v7
         with:
