@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 const ACCEPT_JSON: &str = "application/json, text/plain, */*";
+const LOGIN_EXPIRED_MESSAGE: &str = "B站账号登录态已失效，请重新扫码登录";
 const WBI_CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 /// 快速通道每个目标允许额外翻页抓取的子评论线程数上限。
 const NEWEST_SUB_COMMENT_BUDGET: usize = 10;
@@ -87,15 +88,20 @@ impl CommentHandler {
     }
 
     async fn get_videos(&self, account: &UserInfo) -> Result<Vec<u64>, String> {
-        let wbi_keys = self.ensure_wbi_keys(account).await;
-        if let Ok(ref keys) = wbi_keys {
-            let result = self.get_videos_wbi(account, keys).await;
-            if let Ok(ref videos) = result {
-                if !videos.is_empty() {
-                    return result;
+        match self.ensure_wbi_keys(account).await {
+            Ok(keys) => {
+                let result = self.get_videos_wbi(account, &keys).await;
+                if let Ok(ref videos) = result {
+                    if !videos.is_empty() {
+                        return result;
+                    }
+                    log::warn!("WBI签名API返回空视频列表，降级到旧API");
                 }
-                log::warn!("WBI签名API返回空视频列表，降级到旧API");
             }
+            Err(error) if Self::is_login_error(&error) => {
+                return Err(LOGIN_EXPIRED_MESSAGE.to_string());
+            }
+            Err(error) => log::warn!("获取WBI密钥失败，降级到旧视频列表接口: {}", error),
         }
         self.get_videos_fallback(account).await
     }
@@ -618,8 +624,8 @@ impl CommentHandler {
         // 快速通道限制每个目标额外翻页抓子评论的次数；完整通道不受限制。
         let mut sub_page_budget = NEWEST_SUB_COMMENT_BUDGET;
 
-        if let Ok(wbi_keys) = self.ensure_wbi_keys(account).await {
-            match self
+        match self.ensure_wbi_keys(account).await {
+            Ok(wbi_keys) => match self
                 .stream_cursor(
                     account,
                     target,
@@ -639,8 +645,15 @@ impl CommentHandler {
                     // 部分账号下 WBI 接口会错误地返回空列表，需用旧接口补抓。
                     log::warn!("oid={} WBI接口返回空评论，降级到旧分页接口", target.oid);
                 }
+                Err(error) if Self::is_login_error(&error) => {
+                    return Err(LOGIN_EXPIRED_MESSAGE.to_string());
+                }
                 Err(error) => log::warn!("WBI评论接口失败，降级到旧接口: {}", error),
+            },
+            Err(error) if Self::is_login_error(&error) => {
+                return Err(LOGIN_EXPIRED_MESSAGE.to_string());
             }
+            Err(error) => log::warn!("获取WBI密钥失败，降级到旧分页接口: {}", error),
         }
 
         if sink.is_closed() {
@@ -648,6 +661,10 @@ impl CommentHandler {
         }
         self.stream_pn(account, target, my_mid, mode, &mut sub_page_budget, sink)
             .await
+    }
+
+    fn is_login_error(error: &str) -> bool {
+        error.contains("账号未登录") || error.contains("登录态已失效")
     }
 
     async fn fetch_json(
@@ -873,7 +890,8 @@ impl CommentHandler {
             let params: &[(&str, &str)] = &[
                 ("type", reply_type_s.as_str()),
                 ("oid", oid_s.as_str()),
-                ("sort", "0"),
+                // sort=0 在当前 B 站接口中会返回空列表，使用时间排序获取最新评论。
+                ("sort", "1"),
                 ("ps", "20"),
                 ("pn", pn_s.as_str()),
                 ("nohot", "1"),
@@ -895,6 +913,9 @@ impl CommentHandler {
                     json["code"],
                     json["message"]
                 );
+                if Self::is_login_error(json["message"].as_str().unwrap_or("")) {
+                    return Err(LOGIN_EXPIRED_MESSAGE.to_string());
+                }
                 break;
             }
 
@@ -1113,6 +1134,7 @@ impl CommentHandler {
                                 });
                             }
                         }
+                        Err(error) if Self::is_login_error(&error) => return Err(error),
                         Err(error) => {
                             log::warn!("获取自己的视频列表失败，继续处理指定视频: {}", error)
                         }
@@ -1419,6 +1441,17 @@ mod tests {
             .find(|message| message.extra_data["rpid"] == 103)
             .unwrap();
         assert!(!new_child.extra_data["already_replied"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn detects_bilibili_login_expiration_errors() {
+        assert!(CommentHandler::is_login_error(
+            "获取WBI keys失败: 账号未登录"
+        ));
+        assert!(CommentHandler::is_login_error(LOGIN_EXPIRED_MESSAGE));
+        assert!(!CommentHandler::is_login_error(
+            "评论API code=-412, msg=请求被拦截"
+        ));
     }
 
     #[test]
